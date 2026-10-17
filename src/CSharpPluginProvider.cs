@@ -49,7 +49,7 @@ public sealed class CSharpPluginProvider : IPluginProvider
 
         // 内容寻址：目录名就把"脚本内容 + 编译器 + 运行时"钉死了。脚本改了就是另一个目录。
         var script = File.ReadAllText(entry);
-        var cacheDirectory = Path.Combine(context.DataDirectory, "bin", CacheKey(script));
+        var cacheDirectory = Path.Combine(context.DataDirectory, "bin", CacheKey(script, packageDirectory));
         var assemblyPath = Path.Combine(cacheDirectory, manifest.Name + ".dll");
 
         if (!IsUsable(assemblyPath))
@@ -90,15 +90,34 @@ public sealed class CSharpPluginProvider : IPluginProvider
         return new CompiledPluginInstance(plugin, loadContext);
     }
 
-    /// <summary>脚本内容 + Roslyn 版本 + 运行时版本，xxhash128 后取十六进制。</summary>
-    private static string CacheKey(string script)
+    /// <summary>脚本内容 + 包内自带的依赖 + Roslyn 版本 + 运行时版本，xxhash128 后取十六进制。</summary>
+    private static string CacheKey(string script, string packageDirectory)
     {
         var hasher = new XxHash128();
         hasher.Append(Encoding.UTF8.GetBytes(script));
         hasher.Append(Encoding.UTF8.GetBytes(typeof(CSharpCompilation).Assembly.GetName().Version?.ToString() ?? "?"));
         hasher.Append(Encoding.UTF8.GetBytes(Environment.Version.ToString()));
+
+        // 包内自带的依赖也参与寻址 —— 换了 dll 就该重编。
+        foreach (var path in LocalAssemblies(packageDirectory))
+        {
+            hasher.Append(Encoding.UTF8.GetBytes(Path.GetFileName(path)));
+            hasher.Append(XxHash128.Hash(File.ReadAllBytes(path)));
+        }
+
         return Convert.ToHexStringLower(hasher.GetCurrentHash());
     }
+
+    /// <summary>插件目录里自带的依赖；框架已经有的那些不算（共享层，ADR-0004）。</summary>
+    private static IReadOnlyList<string> LocalAssemblies(string packageDirectory) =>
+        Directory.EnumerateFiles(packageDirectory, "*.dll")
+            .Where(path => !IsFrameworkAssembly(Path.GetFileNameWithoutExtension(path)))
+            .OrderBy(path => path, StringComparer.Ordinal)
+            .ToArray();
+
+    private static bool IsFrameworkAssembly(string name) =>
+        FrameworkContext?.Assemblies.Any(loaded => string.Equals(loaded.GetName().Name, name, StringComparison.Ordinal))
+        ?? false;
 
     /// <summary>产物在、且校验和对得上才算能用。</summary>
     private static bool IsUsable(string assemblyPath)
@@ -172,12 +191,23 @@ public sealed class CSharpPluginProvider : IPluginProvider
             scriptPath,
             Encoding.UTF8);
 
+        // 与 SDK 的 ImplicitUsings 对齐：作者不该为 System / IO / Linq 写样板。
+        // 单独一棵 global using 的树 —— 编译选项上的 Usings 只对 script 模式生效，
+        // 而把 using 拼进脚本会把它的行号整体推移，PDB 里的 file:line 就不准了。
+        var imports = CSharpSyntaxTree.ParseText(
+            string.Join(Environment.NewLine, DefaultUsings.Select(name => $"global using {name};")),
+            new CSharpParseOptions(LanguageVersion.Latest),
+            "implicit-usings.cs",
+            Encoding.UTF8);
+
         // 引用 = 宿主的运行时 + 框架自己 ALC 里的那些（契约与它的抽象包都在里面）。
-        var references = CollectReferences().Select(path => MetadataReference.CreateFromFile(path));
+        // 引用 = 宿主的运行时 + 框架自己 ALC 里的那些 + **插件包里自带的依赖**。
+        var references = CollectReferences(Path.GetDirectoryName(scriptPath)!)
+            .Select(path => MetadataReference.CreateFromFile(path));
 
         var compilation = CSharpCompilation.Create(
             Path.GetFileNameWithoutExtension(assemblyPath),
-            [tree],
+            [imports, tree],
             references,
             new CSharpCompilationOptions(OutputKind.DynamicallyLinkedLibrary, optimizationLevel: OptimizationLevel.Release));
 
@@ -202,8 +232,19 @@ public sealed class CSharpPluginProvider : IPluginProvider
         return false;
     }
 
-    /// <summary>宿主的运行时 + 框架自己的 ALC（契约与它的抽象包，以及框架引用的那些）。</summary>
-    private static IEnumerable<string> CollectReferences()
+    private static readonly string[] DefaultUsings =
+    [
+        "System",
+        "System.Collections.Generic",
+        "System.IO",
+        "System.Linq",
+        "System.Net.Http",
+        "System.Threading",
+        "System.Threading.Tasks",
+    ];
+
+    /// <summary>宿主的运行时 + 框架自己的 ALC + 插件包里自带的依赖。</summary>
+    private static IEnumerable<string> CollectReferences(string packageDirectory)
     {
         var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
 
@@ -226,6 +267,14 @@ public sealed class CSharpPluginProvider : IPluginProvider
             if (seen.Add(Path.GetFileName(assembly.Location)))
             {
                 yield return assembly.Location;
+            }
+        }
+
+        foreach (var path in LocalAssemblies(packageDirectory))
+        {
+            if (seen.Add(Path.GetFileName(path)))
+            {
+                yield return path;
             }
         }
     }

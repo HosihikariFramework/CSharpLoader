@@ -72,6 +72,10 @@ checks.Add(("脚本装载时执行，且读到包外覆盖的配置", Read("body
 checks.Add(("启用钩子到达脚本", Read("enabled.txt") == "enabled", Read("enabled.txt")));
 checks.Add(("程序集发的通道消息被 C# 插件收到", Read("ping.txt") == "ping:\"from-host\"", Read("ping.txt")));
 
+// 包内自带的第三方依赖：编译期看得见、运行期从包里解析。
+var expectedHash = Convert.ToHexStringLower(System.IO.Hashing.XxHash128.Hash(new byte[] { 1, 2, 3 }));
+checks.Add(("包内自带的第三方依赖可用", Read("hash.txt") == expectedHash, Read("hash.txt")));
+
 var unloaded = host.Unload("Hello");
 checks.Add((
     "卸载时停用与卸载钩子都到达",
@@ -191,6 +195,11 @@ void StageScriptPackage()
     // 作者给的默认值，随包更新（ADR-0018）。
     File.WriteAllText(Path.Combine(package, "Hello.conf"), "greeting = \"package\"\n");
 
+    // 包里自带的第三方依赖：不是框架的一部分，编译期与运行期都得从包里拿。
+    File.Copy(
+        Path.Combine(RepoRoot(), "src", "bin", ConfigurationName(), "net10.0", "System.IO.Hashing.dll"),
+        Path.Combine(package, "System.IO.Hashing.dll"));
+
     File.WriteAllText(Path.Combine(package, "main.cs"), """
         using System.IO;
         using Hosihikari;
@@ -205,6 +214,10 @@ void StageScriptPackage()
                 _data = context.DataDirectory;
                 context.Logger.LogInformation("csharp plugin loaded in {Name}", context.Name);
                 File.WriteAllText(Path.Combine(_data, "body.txt"), "body:" + context.Configuration["greeting"]);
+
+                // 第三方依赖真的可用：包里自带的那一份，编译期与运行期都是。
+                var hash = Convert.ToHexStringLower(System.IO.Hashing.XxHash128.Hash([1, 2, 3]));
+                File.WriteAllText(Path.Combine(_data, "hash.txt"), hash);
                 context.Events.Subscribe<ChannelMessage>(message =>
                 {
                     if (message.Topic == "ping")
