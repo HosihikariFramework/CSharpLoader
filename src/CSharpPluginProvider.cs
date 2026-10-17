@@ -66,7 +66,7 @@ public sealed class CSharpPluginProvider : IPluginProvider
             }
         }
 
-        var loadContext = new ScriptLoadContext(assemblyPath, cacheDirectory);
+        var loadContext = new ScriptLoadContext(assemblyPath, cacheDirectory, packageDirectory);
         var assembly = loadContext.LoadFromAssemblyPath(assemblyPath);
 
         var entryType = assembly.GetTypes().FirstOrDefault(candidate =>
@@ -307,7 +307,7 @@ public sealed class CSharpPluginProvider : IPluginProvider
     }
 
     /// <summary>每个插件一个 collectible ALC：自己的依赖从自己的目录解析，契约走框架的 ALC。</summary>
-    private sealed class ScriptLoadContext(string mainAssemblyPath, string directory)
+    private sealed class ScriptLoadContext(string mainAssemblyPath, string directory, string packageDirectory)
         : AssemblyLoadContext(name: Path.GetFileNameWithoutExtension(mainAssemblyPath), isCollectible: true)
     {
         private readonly AssemblyDependencyResolver? _resolver = TryCreateResolver(mainAssemblyPath);
@@ -328,7 +328,8 @@ public sealed class CSharpPluginProvider : IPluginProvider
             }
 
             var path = _resolver?.ResolveAssemblyToPath(assemblyName)
-                       ?? Existing(Path.Combine(directory, assemblyName.Name + ".dll"));
+                       ?? Existing(Path.Combine(directory, assemblyName.Name + ".dll"))
+                       ?? Existing(Path.Combine(packageDirectory, assemblyName.Name + ".dll"));
             return path is null ? null : LoadFromAssemblyPath(path);
         }
 

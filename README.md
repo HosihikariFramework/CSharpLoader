@@ -69,10 +69,12 @@ plugin does — including the type-keyed channels.
 `CSharpCompilation` from Roslyn (`Microsoft.CodeAnalysis.CSharp`). The references are the host's
 trusted platform assemblies plus the assemblies in the **framework's own load context** — the host is
 loaded into an isolated ALC, so the contract and its abstractions are not in the default context.
+Private DLLs in the plugin package root are also referenced at compile time and resolved from that
+directory at runtime; shared framework assemblies keep their existing identity.
 Parsing passes an encoding, without which Roslyn refuses to emit debugging information (CS8055).
 
 The output is cached by content (ADR-0029): `<data directory>/bin/<hash>/<name>.dll`, the hash covering
-the script text, the Roslyn version and the runtime version. A checksum sits next to it and is verified
+the script text, package-local private DLL names and contents, the Roslyn version and the runtime version. A checksum sits next to it and is verified
 before loading — a mismatch means recompile, never load anyway. Compilation goes into a staging
 directory and is moved into place only on success, and a portable PDB is emitted alongside so logged
 stacks carry `file:line`.
@@ -87,12 +89,13 @@ dotnet run --project host/Hosihikari.PluginProvider.CSharp.Host.csproj -c Releas
 ```
 
 The harness drives this Provider through the core's real `PluginManagerHost`, so sibling
-`Hosihikari.PluginManager` and `Hosihikari.Abstractions` checkouts are required. It proves ten
+`Hosihikari.PluginManager` and `Hosihikari.Abstractions` checkouts are required. It checks these
 things: the Provider is registered by a plugin package, the artifact lands in a content-addressed
 directory with its checksum and PDB, the script runs at load and reads the operator's override,
 enable hooks reach it, a channel message from the host reaches it, a package-local third-party
 dependency is usable, disable and unload hooks arrive, the unload verifies, a second load hits the
-cache, and a tampered artifact is detected and recompiled.
+cache, and a tampered artifact is detected and recompiled. A separate fixture DLL is built without
+referencing it from the host, so the dependency check also covers a genuinely private assembly.
 
 ## How it reaches the host process
 

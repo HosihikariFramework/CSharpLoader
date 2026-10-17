@@ -75,6 +75,7 @@ checks.Add(("程序集发的通道消息被 C# 插件收到", Read("ping.txt") =
 // 包内自带的第三方依赖：编译期看得见、运行期从包里解析。
 var expectedHash = Convert.ToHexStringLower(System.IO.Hashing.XxHash128.Hash(new byte[] { 1, 2, 3 }));
 checks.Add(("包内自带的第三方依赖可用", Read("hash.txt") == expectedHash, Read("hash.txt")));
+checks.Add(("宿主未引用的包内私有依赖可用", Read("private.txt") == "private-dependency", Read("private.txt")));
 
 var unloaded = host.Unload("Hello");
 checks.Add((
@@ -199,6 +200,9 @@ void StageScriptPackage()
     File.Copy(
         Path.Combine(RepoRoot(), "src", "bin", ConfigurationName(), "net10.0", "System.IO.Hashing.dll"),
         Path.Combine(package, "System.IO.Hashing.dll"));
+    File.Copy(
+        Path.Combine(RepoRoot(), "test", "PrivateDependency", "bin", ConfigurationName(), "net10.0", "Hosihikari.CSharp.PrivateDependency.dll"),
+        Path.Combine(package, "Hosihikari.CSharp.PrivateDependency.dll"));
 
     File.WriteAllText(Path.Combine(package, "main.cs"), """
         using System.IO;
@@ -218,6 +222,7 @@ void StageScriptPackage()
                 // 第三方依赖真的可用：包里自带的那一份，编译期与运行期都是。
                 var hash = Convert.ToHexStringLower(System.IO.Hashing.XxHash128.Hash([1, 2, 3]));
                 File.WriteAllText(Path.Combine(_data, "hash.txt"), hash);
+                File.WriteAllText(Path.Combine(_data, "private.txt"), ProviderPrivateDependency.Marker.Value);
                 context.Events.Subscribe<ChannelMessage>(message =>
                 {
                     if (message.Topic == "ping")
