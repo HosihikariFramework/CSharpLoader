@@ -150,7 +150,7 @@ void StageProviderPackage()
           "type": "hosihikari",
           "version": "0.1.0",
           "dependencies": [ { "name": "hosihikari" } ],
-          "extraInfo": { "api": "1", "format_version": "1", "provider": "assembly" }
+          "extraInfo": { "api": "2", "format_version": "1", "provider": "assembly" }
         }
         """);
 
@@ -188,7 +188,7 @@ void StageScriptPackage()
             { "name": "hosihikari" },
             { "name": "hosihikari-csharp" }
           ],
-          "extraInfo": { "api": "1", "format_version": "1", "provider": "csharp" }
+          "extraInfo": { "api": "2", "format_version": "1", "provider": "csharp" }
         }
         """);
 
@@ -227,8 +227,17 @@ void StageScriptPackage()
                 });
             }
 
-            public void OnEnable() => File.WriteAllText(Path.Combine(_data, "enabled.txt"), "enabled");
-            public void OnDisable() => File.WriteAllText(Path.Combine(_data, "disabled.txt"), "disabled");
+            public PluginHookResult OnEnable()
+            {
+                File.WriteAllText(Path.Combine(_data, "enabled.txt"), "enabled");
+                return PluginHookResult.Allow();
+            }
+
+            public PluginHookResult OnDisable()
+            {
+                File.WriteAllText(Path.Combine(_data, "disabled.txt"), "disabled");
+                return PluginHookResult.Allow();
+            }
             public void OnUnload() => File.WriteAllText(Path.Combine(_data, "unloaded.txt"), "unloaded");
         }
         """);

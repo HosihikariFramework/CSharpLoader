@@ -26,7 +26,7 @@ plugins/Hello/
         { "name": "hosihikari" },
         { "name": "hosihikari-csharp" }
       ],
-      "extraInfo": { "api": "1", "format_version": "1", "provider": "csharp" }
+      "extraInfo": { "api": "2", "format_version": "1", "provider": "csharp" }
     }
   main.cs
   Hello.conf          ← the author's defaults, shipped with the package
@@ -49,8 +49,13 @@ public sealed class HelloPlugin : IPlugin
         File.WriteAllText(Path.Combine(_data, "body.txt"), "body:" + context.Configuration["greeting"]);
     }
 
-    public void OnEnable() => File.WriteAllText(Path.Combine(_data, "enabled.txt"), "enabled");
-    public void OnDisable() { }
+    public PluginHookResult OnEnable()
+    {
+        File.WriteAllText(Path.Combine(_data, "enabled.txt"), "enabled");
+        return PluginHookResult.Allow();
+    }
+
+    public PluginHookResult OnDisable() => PluginHookResult.Allow();
     public void OnUnload() { }
 }
 ```
