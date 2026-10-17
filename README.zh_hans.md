@@ -7,7 +7,8 @@ Roslyn 把 `.cs` 编成真程序集，再进一个 collectible ALC。
 
 C# 插件因此拿到与其他程序集插件一样的承诺：每插件的依赖互相隔离，卸载是真的验证过而不是假定的。
 
-**一个虚拟机一个仓** —— 这一仓只做 C#。JavaScript、F#、Node.js、Python、Lua 各是各的仓。
+**进程内只留 .NET。** 框架在进程内保留程序集型、C# 与 F# 三个 Provider；JavaScript、Python、Lua 走
+通用的进程外 Provider（`Hosihikari.PluginProvider.Rpc`，ADR-0031）—— 不再一个运行时一个仓。
 
 ## 插件包长什么样
 
@@ -76,14 +77,14 @@ public sealed class HelloPlugin : IPlugin
 dotnet run --project host/Hosihikari.PluginProvider.CSharp.Host.csproj -c Release
 ```
 
-验证宿主借核心的 `PluginManagerHost` 驱动它，所以需要并列的 `Hosihikari.PluginManager` checkout。
-它证明九件事：Provider 由插件包登记、产物按内容寻址落盘且带校验和与 PDB、脚本装载时执行并读到包外覆盖、
-启用钩子到达插件、宿主发的通道消息它能收到、停用与卸载钩子到达、卸载验证通过、同一个脚本再装载命中缓存、
-以及产物被改坏后会被发现并重编。
+验证宿主借核心的 `PluginManagerHost` 驱动它，所以需要并列的 `Hosihikari.PluginManager` 与
+`Hosihikari.Abstractions` checkout。它证明十件事：Provider 由插件包登记、产物按内容寻址落盘且带校验和
+与 PDB、脚本装载时执行并读到包外覆盖、启用钩子到达插件、宿主发的通道消息它能收到、包内自带的第三方依赖
+可用、停用与卸载钩子到达、卸载验证通过、同一个脚本再装载命中缓存、以及产物被改坏后会被发现并重编。
 
 ## 它怎么进宿主进程
 
-作为插件包，名字是 `hosihikari-csharp` —— 与其他 Provider 同一套。脚本包声明依赖，依赖图先排它。
+作为插件包，名字是 `hosihikari-csharp` —— 与其他进程内 Provider 同一套。脚本包声明依赖，依赖图先排它。
 
 **登记之后不能撤销**：它造出来的类型住在它的装载上下文里。
 

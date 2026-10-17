@@ -9,8 +9,9 @@ into its own collectible ALC.
 That buys C# plugins the same promises as any assembly plugin: per-plugin dependency isolation, and an
 unload that is verified rather than assumed.
 
-**One VM, one repository** — this one does C#. JavaScript, F#, Node.js, Python and Lua each get their
-own.
+**In-process .NET.** The framework keeps the assembly provider, this C# provider and the F# provider
+in-process. JavaScript, Python and Lua go through the generic out-of-process provider
+(`Hosihikari.PluginProvider.Rpc`, ADR-0031); there is no longer a repository per runtime.
 
 ## What a plugin package looks like
 
@@ -85,16 +86,17 @@ are trusted (ADR-0011).
 dotnet run --project host/Hosihikari.PluginProvider.CSharp.Host.csproj -c Release
 ```
 
-The harness drives this Provider through the core's real `PluginManagerHost`, so a sibling
-`Hosihikari.PluginManager` checkout is required. It proves nine things: the Provider is registered by
-a plugin package, the artifact lands in a content-addressed directory with its checksum and PDB, the
-script runs at load and reads the operator's override, enable hooks reach it, a channel message from
-the host reaches it, disable and unload hooks arrive, the unload verifies, a second load hits the
+The harness drives this Provider through the core's real `PluginManagerHost`, so sibling
+`Hosihikari.PluginManager` and `Hosihikari.Abstractions` checkouts are required. It proves ten
+things: the Provider is registered by a plugin package, the artifact lands in a content-addressed
+directory with its checksum and PDB, the script runs at load and reads the operator's override,
+enable hooks reach it, a channel message from the host reaches it, a package-local third-party
+dependency is usable, disable and unload hooks arrive, the unload verifies, a second load hits the
 cache, and a tampered artifact is detected and recompiled.
 
 ## How it reaches the host process
 
-As a plugin package, named `hosihikari-csharp` — the same way as the other providers. Script packages
+As a plugin package, named `hosihikari-csharp` — the same way as the other in-process providers. Script packages
 declare the dependency, and the dependency graph orders the provider first.
 
 **Registration cannot be undone**: the types this provider hands out live in its load context.
