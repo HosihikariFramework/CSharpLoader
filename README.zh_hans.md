@@ -1,0 +1,87 @@
+# Hosihikari.PluginProvider.CSharp
+
+[English](README.md) | [简体中文](README.zh_hans.md)
+
+星光框架的 **C# 型插件 Provider**。与 F# 一样，C# 没有自己的虚拟机，所以这个 Provider **装载时编译**：
+Roslyn 把 `.cs` 编成真程序集，再进一个 collectible ALC。
+
+C# 插件因此拿到与其他程序集插件一样的承诺：每插件的依赖互相隔离，卸载是真的验证过而不是假定的。
+
+**一个虚拟机一个仓** —— 这一仓只做 C#。JavaScript、F#、Node.js、Python、Lua 各是各的仓。
+
+## 插件包长什么样
+
+```
+plugins/Hello/
+  manifest.json
+    {
+      "name": "Hello",
+      "entry": "main.cs",
+      "type": "hosihikari",
+      "version": "1.0.0",
+      "dependencies": [
+        { "name": "hosihikari" },
+        { "name": "hosihikari-csharp" }
+      ],
+      "extraInfo": { "api": "1", "format_version": "1", "provider": "csharp" }
+    }
+  main.cs
+  Hello.conf          ← 作者给的默认值，随包更新
+```
+
+文件里定义一个实现 `IPlugin`、有无参构造的类型；找到它是 Provider 的事。
+
+```csharp
+using System.IO;
+using Hosihikari;
+
+public sealed class HelloPlugin : IPlugin
+{
+    private string _data = "";
+
+    public void OnLoad(IPluginContext context)
+    {
+        _data = context.DataDirectory;
+        File.WriteAllText(Path.Combine(_data, "body.txt"), "body:" + context.Configuration["greeting"]);
+    }
+
+    public void OnEnable() => File.WriteAllText(Path.Combine(_data, "enabled.txt"), "enabled");
+    public void OnDisable() { }
+    public void OnUnload() { }
+}
+```
+
+编出来的是一个引用了契约的真程序集，所以 C# 插件拿得到任何插件都拿得到的东西 —— 包括那些按类型做键的通道。
+
+## 它怎么编译
+
+用 Roslyn 的 `CSharpCompilation`（`Microsoft.CodeAnalysis.CSharp`）。引用 = 宿主的运行时，加上
+**框架自己那个装载上下文**里的程序集 —— 宿主被装在一个隔离的 ALC 里，契约与它的抽象包不在默认上下文。
+解析源码时要给编码，否则 Roslyn 拒绝发调试信息（CS8055）。
+
+产物按内容寻址缓存（ADR-0029）：`<数据目录>/bin/<哈希>/<名字>.dll`，哈希覆盖脚本内容、Roslyn 版本与
+运行时版本。产物旁存一份校验和，加载前对一遍 —— 对不上就重编，绝不照跑。编译先落到临时目录、成功了才
+改名进去；同时产出 portable PDB，日志里的栈因此带 `file:line`。
+
+校验和防的是**事故**，不防**恶意**：插件与本框架同进程、且完全受信（ADR-0011）。
+
+## 跑一遍
+
+```
+dotnet run --project host/Hosihikari.PluginProvider.CSharp.Host.csproj -c Release
+```
+
+验证宿主借核心的 `PluginManagerHost` 驱动它，所以需要并列的 `Hosihikari.PluginManager` checkout。
+它证明九件事：Provider 由插件包登记、产物按内容寻址落盘且带校验和与 PDB、脚本装载时执行并读到包外覆盖、
+启用钩子到达插件、宿主发的通道消息它能收到、停用与卸载钩子到达、卸载验证通过、同一个脚本再装载命中缓存、
+以及产物被改坏后会被发现并重编。
+
+## 它怎么进宿主进程
+
+作为插件包，名字是 `hosihikari-csharp` —— 与其他 Provider 同一套。脚本包声明依赖，依赖图先排它。
+
+**登记之后不能撤销**：它造出来的类型住在它的装载上下文里。
+
+## 许可
+
+LGPL-3.0-or-later，见 [LICENSE.md](LICENSE.md)。
