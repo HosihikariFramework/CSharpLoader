@@ -11,7 +11,7 @@ unload that is verified rather than assumed.
 
 **In-process .NET.** The framework keeps the assembly provider, this C# provider and the F# provider
 in-process. JavaScript, Python and Lua go through the generic out-of-process provider
-(`Hosihikari.PluginProvider.Rpc`, ADR-0031); there is no longer a repository per runtime.
+(`Hosihikari.PluginProvider.Rpc`, ADR-0031).
 
 ## What a plugin package looks like
 
