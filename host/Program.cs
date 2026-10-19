@@ -20,7 +20,7 @@ var configRoot = Path.Combine(stage, "config", "hosihikari");
 Directory.CreateDirectory(configRoot);
 
 StageProviderPackage();
-StageScriptPackage();
+var nativeStaged = StageScriptPackage();
 
 // 运营方的覆盖放包外（ADR-0018）—— 脚本读到的应当是这一份。
 File.WriteAllText(Path.Combine(configRoot, "Hello.conf"), "greeting = \"overridden\"\n");
@@ -76,6 +76,12 @@ checks.Add(("程序集发的通道消息被 C# 插件收到", Read("ping.txt") =
 var expectedHash = Convert.ToHexStringLower(System.IO.Hashing.XxHash128.Hash(new byte[] { 1, 2, 3 }));
 checks.Add(("包内自带的第三方依赖可用", Read("hash.txt") == expectedHash, Read("hash.txt")));
 checks.Add(("宿主未引用的包内私有依赖可用", Read("private.txt") == "private-dependency", Read("private.txt")));
+
+// 本机库按 RID 目录优先解析（ADR-0034）；包根那份是 1，RID 那份是 42。
+checks.Add((
+    "本机库按 RID 目录解析",
+    !nativeStaged || Read("native.txt") == "42",
+    nativeStaged ? Read("native.txt") : "（跳过：没有可用的 C 编译器）"));
 
 var unloaded = host.Unload("Hello");
 checks.Add((
@@ -174,7 +180,7 @@ void StageProviderPackage()
 }
 
 // C# 包：一个 .cs，里面定义实现 IPlugin 的类型 —— 编译与入口发现都是 Provider 的事。
-void StageScriptPackage()
+bool StageScriptPackage()
 {
     var package = Path.Combine(pluginsRoot, "Hello");
     Directory.CreateDirectory(package);
@@ -204,8 +210,11 @@ void StageScriptPackage()
         Path.Combine(RepoRoot(), "test", "PrivateDependency", "bin", ConfigurationName(), "net10.0", "Hosihikari.CSharp.PrivateDependency.dll"),
         Path.Combine(package, "Hosihikari.CSharp.PrivateDependency.dll"));
 
+    var nativeStaged = StageNativeFixture(package);
+
     File.WriteAllText(Path.Combine(package, "main.cs"), """
         using System.IO;
+        using System.Runtime.InteropServices;
         using Hosihikari;
         using Microsoft.Extensions.Logging;
 
@@ -223,6 +232,15 @@ void StageScriptPackage()
                 var hash = Convert.ToHexStringLower(System.IO.Hashing.XxHash128.Hash([1, 2, 3]));
                 File.WriteAllText(Path.Combine(_data, "hash.txt"), hash);
                 File.WriteAllText(Path.Combine(_data, "private.txt"), ProviderPrivateDependency.Marker.Value);
+                try
+                {
+                    File.WriteAllText(Path.Combine(_data, "native.txt"), NativeProbe().ToString());
+                }
+                catch (DllNotFoundException)
+                {
+                    File.WriteAllText(Path.Combine(_data, "native.txt"), "skip");
+                }
+
                 context.Events.Subscribe<ChannelMessage>(message =>
                 {
                     if (message.Topic == "ping")
@@ -231,6 +249,9 @@ void StageScriptPackage()
                     }
                 });
             }
+
+            [DllImport("hosihikari_probe", EntryPoint = "hosihikari_probe")]
+            private static extern int NativeProbe();
 
             public PluginHookResult OnEnable()
             {
@@ -246,6 +267,95 @@ void StageScriptPackage()
             public void OnUnload() => File.WriteAllText(Path.Combine(_data, "unloaded.txt"), "unloaded");
         }
         """);
+
+    return nativeStaged;
+}
+
+// 同一符号在包根与 RID 目录各放一份；RID 那份是 42，包根那份是 1。
+bool StageNativeFixture(string package)
+{
+    var compiler = FindCCompiler();
+    if (compiler is null)
+    {
+        return false;
+    }
+
+    var fileName = OperatingSystem.IsWindows() ? "hosihikari_probe.dll"
+        : OperatingSystem.IsMacOS() ? "libhosihikari_probe.dylib"
+        : "libhosihikari_probe.so";
+    var ridDirectory = Path.Combine(
+        package,
+        "runtimes",
+        System.Runtime.InteropServices.RuntimeInformation.RuntimeIdentifier,
+        "native");
+    Directory.CreateDirectory(ridDirectory);
+    var source = Path.Combine(RepoRoot(), "test", "native", "probe.c");
+    var ridOk = CompileNative(compiler, source, Path.Combine(ridDirectory, fileName), "42");
+    var rootOk = CompileNative(compiler, source, Path.Combine(package, fileName), "1");
+    return ridOk && rootOk;
+}
+
+static string? FindCCompiler()
+{
+    string[] candidates = OperatingSystem.IsWindows() ? ["clang"] : ["cc", "clang"];
+    foreach (var candidate in candidates)
+    {
+        try
+        {
+            var start = new System.Diagnostics.ProcessStartInfo(candidate)
+            {
+                RedirectStandardOutput = true,
+                RedirectStandardError = true,
+                UseShellExecute = false,
+                CreateNoWindow = true,
+            };
+            start.ArgumentList.Add("--version");
+            using var process = System.Diagnostics.Process.Start(start);
+            if (process is null)
+            {
+                continue;
+            }
+
+            process.StandardOutput.ReadToEnd();
+            process.StandardError.ReadToEnd();
+            process.WaitForExit();
+            if (process.ExitCode == 0)
+            {
+                return candidate;
+            }
+        }
+        catch (System.ComponentModel.Win32Exception)
+        {
+        }
+    }
+
+    return null;
+}
+
+static bool CompileNative(string compiler, string source, string output, string value)
+{
+    var start = new System.Diagnostics.ProcessStartInfo(compiler)
+    {
+        RedirectStandardOutput = true,
+        RedirectStandardError = true,
+        UseShellExecute = false,
+        CreateNoWindow = true,
+    };
+    start.ArgumentList.Add(OperatingSystem.IsMacOS() ? "-dynamiclib" : "-shared");
+    if (!OperatingSystem.IsWindows() && !OperatingSystem.IsMacOS())
+    {
+        start.ArgumentList.Add("-fPIC");
+    }
+
+    start.ArgumentList.Add("-o");
+    start.ArgumentList.Add(output);
+    start.ArgumentList.Add($"-DPROBE_VALUE={value}");
+    start.ArgumentList.Add(source);
+    using var process = System.Diagnostics.Process.Start(start)!;
+    process.StandardOutput.ReadToEnd();
+    process.StandardError.ReadToEnd();
+    process.WaitForExit();
+    return process.ExitCode == 0;
 }
 
 static string RepoRoot()
