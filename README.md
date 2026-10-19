@@ -7,7 +7,8 @@ provider **compiles at load time**: Roslyn turns a `.cs` file into a real assemb
 into its own collectible ALC.
 
 That buys C# plugins the same promises as any assembly plugin: per-plugin dependency isolation, and an
-unload that is verified rather than assumed.
+unload that is verified rather than assumed. This is the official AOT-style path: the provider hands
+the core an assembly before the plugin runs, and the plugin itself is ordinary CLR code.
 
 **In-process .NET.** The framework keeps the assembly provider, this C# provider and the F# provider
 in-process. Other languages go through the generic out-of-process provider
@@ -74,7 +75,7 @@ directory at runtime; shared framework assemblies keep their existing identity.
 Parsing passes an encoding, without which Roslyn refuses to emit debugging information (CS8055).
 
 The output is cached by content (ADR-0029): `<data directory>/bin/<hash>/<name>.dll`, the hash covering
-the script text, package-local private DLL names and contents, the Roslyn version and the runtime version. A checksum sits next to it and is verified
+the source text, package-local private DLL names and contents, the Roslyn version and the runtime version. A checksum sits next to it and is verified
 before loading — a mismatch means recompile, never load anyway. Compilation goes into a staging
 directory and is moved into place only on success, and a portable PDB is emitted alongside so logged
 stacks carry `file:line`.
@@ -91,7 +92,7 @@ dotnet run --project host/Hosihikari.PluginProvider.CSharp.Host.csproj -c Releas
 The harness drives this Provider through the core's real `PluginManagerHost`, so sibling
 `Hosihikari.PluginManager`, `Hosihikari.Abstractions` and McMaster fork checkouts are required. It
 checks these things: the Provider is registered by a plugin package, the artifact lands in a
-content-addressed directory with its checksum and PDB, the script runs at load and reads the
+content-addressed directory with its checksum and PDB, the source is compiled at load and reads the
 operator's override, enable hooks reach it, a channel message from the host reaches it, a
 package-local third-party dependency is usable, native libraries resolve from the RID directory,
 disable and unload hooks arrive, the unload verifies, a second load hits the cache, and a tampered
@@ -100,7 +101,7 @@ referencing it from the host, so the dependency check also covers a genuinely pr
 
 ## How it reaches the host process
 
-As a plugin package, named `hosihikari-csharp` — the same way as the other in-process providers. Script packages
+As a plugin package, named `hosihikari-csharp` — the same way as the other in-process providers. Source packages
 declare the dependency, and the dependency graph orders the provider first.
 
 **Registration cannot be undone**: the types this provider hands out live in its load context.

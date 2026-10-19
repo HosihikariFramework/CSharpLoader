@@ -6,6 +6,7 @@
 Roslyn 把 `.cs` 编成真程序集，再进一个 collectible ALC。
 
 C# 插件因此拿到与其他程序集插件一样的承诺：每插件的依赖互相隔离，卸载是真的验证过而不是假定的。
+这是官方的 AOT 式路径：Provider 在插件开始运行前把程序集交给核心，插件本身是普通 CLR 代码。
 
 **进程内只留 .NET。** 框架在进程内保留程序集型、C# 与 F# 三个 Provider；其他语言走
 通用的进程外 Provider（`Hosihikari.PluginProvider.Rpc`，ADR-0031）。
@@ -66,7 +67,7 @@ public sealed class HelloPlugin : IPlugin
 包根目录内的私有 DLL 也参与编译引用，运行时从包目录解析；共享框架程序集仍保持原来的类型身份。
 解析源码时要给编码，否则 Roslyn 拒绝发调试信息（CS8055）。
 
-产物按内容寻址缓存（ADR-0029）：`<数据目录>/bin/<哈希>/<名字>.dll`，哈希覆盖脚本内容、Roslyn 版本与
+产物按内容寻址缓存（ADR-0029）：`<数据目录>/bin/<哈希>/<名字>.dll`，哈希覆盖源码内容、Roslyn 版本与
 运行时版本，以及包内私有 DLL 的名字和内容。产物旁存一份校验和，加载前对一遍 —— 对不上就重编，绝不照跑。编译先落到临时目录、成功了才
 改名进去；同时产出 portable PDB，日志里的栈因此带 `file:line`。
 
@@ -80,13 +81,13 @@ dotnet run --project host/Hosihikari.PluginProvider.CSharp.Host.csproj -c Releas
 
 验证宿主借核心的 `PluginManagerHost` 驱动它，所以需要并列的 `Hosihikari.PluginManager`、
 `Hosihikari.Abstractions` 与 McMaster 的 fork checkout。它验证：Provider 由插件包登记、产物按内容寻址落盘且带校验和
-与 PDB、脚本装载时执行并读到包外覆盖、启用钩子到达插件、宿主发的通道消息它能收到、包内自带的第三方依赖
-可用、本机库按 RID 目录解析、停用与卸载钩子到达、卸载验证通过、同一个脚本再装载命中缓存、以及产物被改坏后会被发现并重编。
+与 PDB、源码装载时编译并读到包外覆盖、启用钩子到达插件、宿主发的通道消息它能收到、包内自带的第三方依赖
+可用、本机库按 RID 目录解析、停用与卸载钩子到达、卸载验证通过、同一份源码再装载命中缓存、以及产物被改坏后会被发现并重编。
 测试还会构建宿主没有引用的独立 DLL，验证真正私有的依赖也能在插件中使用。
 
 ## 它怎么进宿主进程
 
-作为插件包，名字是 `hosihikari-csharp` —— 与其他进程内 Provider 同一套。脚本包声明依赖，依赖图先排它。
+作为插件包，名字是 `hosihikari-csharp` —— 与其他进程内 Provider 同一套。源码包声明依赖，依赖图先排它。
 
 **登记之后不能撤销**：它造出来的类型住在它的装载上下文里。
 
