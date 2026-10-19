@@ -2,7 +2,7 @@
 
 [English](README.md) | [简体中文](README.zh_hans.md)
 
-The **C# plugin Provider** of the Hosihikari framework. Like F#, C# has no VM of its own, so this
+The **C# plugin Provider** of the Hosihikari framework. Like F#, C# runs on the CLR, so this
 provider **compiles at load time**: Roslyn turns a `.cs` file into a real assembly, which then goes
 into its own collectible ALC.
 

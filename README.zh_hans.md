@@ -2,7 +2,7 @@
 
 [English](README.md) | [简体中文](README.zh_hans.md)
 
-星光框架的 **C# 型插件 Provider**。与 F# 一样，C# 没有自己的虚拟机，所以这个 Provider **装载时编译**：
+星光框架的 **C# 型插件 Provider**。与 F# 一样，C# 直接跑在 CLR 上，所以这个 Provider **装载时编译**：
 Roslyn 把 `.cs` 编成真程序集，再进一个 collectible ALC。
 
 C# 插件因此拿到与其他程序集插件一样的承诺：每插件的依赖互相隔离，卸载是真的验证过而不是假定的。

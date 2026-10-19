@@ -14,7 +14,7 @@ namespace Hosihikari.PluginProvider.CSharp;
 /// <summary>
 /// C# 型插件（ADR-0002 的 Provider 扩展点）。
 ///
-/// 与 F# 那条同形：C# 也没有自己的虚拟机，所以这里**装载时编译** —— Roslyn 把 <c>.cs</c> 编成
+/// 与 F# 那条同形：C# 直接跑在 CLR 上，所以这里**装载时编译** —— Roslyn 把 <c>.cs</c> 编成
 /// 程序集，再交给一个 collectible ALC，拿到与其他程序集插件一样的隔离与卸载承诺。
 ///
 /// 产物按**内容寻址**缓存（ADR-0029）：目录名是脚本内容、Roslyn 版本与运行时版本的哈希，
