@@ -1,3 +1,4 @@
+using System.Runtime.Loader;
 using Hosihikari;
 using Hosihikari.PluginManagement;
 using Hosihikari.PluginProvider.CSharp;
@@ -107,6 +108,84 @@ if (artifact is not null)
 var recovered = host.Load(Path.Combine(pluginsRoot, "Hello"));
 var repaired = artifact is not null && IsChecksumValid(artifact);
 checks.Add(("产物被改坏后重编并通过校验", recovered && repaired, repaired ? "已重编" : "校验仍不符"));
+
+// 构造函数抛出时，Provider 必须回收 ALC 并交回 null；否则每次重试都泄漏一个 ALC。
+var broken = Path.Combine(pluginsRoot, "Broken");
+Directory.CreateDirectory(broken);
+File.WriteAllText(Path.Combine(broken, "manifest.json"), """
+    {
+      "name": "Broken",
+      "entry": "main.cs",
+      "type": "hosihikari",
+      "version": "1.0.0",
+      "dependencies": [
+        { "name": "hosihikari" },
+        { "name": "hosihikari-csharp" }
+      ],
+      "extraInfo": { "api": "2", "format_version": "1", "provider": "csharp" }
+    }
+    """);
+File.WriteAllText(Path.Combine(broken, "main.cs"), """
+    using Hosihikari;
+
+    public sealed class BrokenPlugin : IPlugin
+    {
+        public BrokenPlugin() => throw new System.InvalidOperationException("constructor");
+        public void OnLoad(IPluginContext context) { }
+        public PluginHookResult OnEnable() => PluginHookResult.Allow();
+        public PluginHookResult OnDisable() => PluginHookResult.Allow();
+        public void OnUnload() { }
+    }
+    """);
+var alcBefore = AssemblyLoadContext.All.Count();
+var brokenLoaded = host.Load(broken);
+for (var i = 0; i < 10; i++)
+{
+    GC.Collect();
+    GC.WaitForPendingFinalizers();
+}
+var alcAfter = AssemblyLoadContext.All.Count();
+checks.Add(("装载失败的插件不泄漏 ALC", !brokenLoaded && alcAfter == alcBefore,
+    $"before={alcBefore} after={alcAfter} loaded={brokenLoaded}"));
+
+// 合法的子目录入口：源码在 src/ 下，依赖在包根；编译引用必须从包根找。
+var nested = Path.Combine(pluginsRoot, "Nested");
+Directory.CreateDirectory(Path.Combine(nested, "src"));
+File.Copy(
+    Path.Combine(RepoRoot(), "test", "PrivateDependency", "bin", ConfigurationName(), "net10.0", "Hosihikari.CSharp.PrivateDependency.dll"),
+    Path.Combine(nested, "Hosihikari.CSharp.PrivateDependency.dll"));
+File.WriteAllText(Path.Combine(nested, "manifest.json"), """
+    {
+      "name": "Nested",
+      "entry": "src/main.cs",
+      "type": "hosihikari",
+      "version": "1.0.0",
+      "dependencies": [
+        { "name": "hosihikari" },
+        { "name": "hosihikari-csharp" }
+      ],
+      "extraInfo": { "api": "2", "format_version": "1", "provider": "csharp" }
+    }
+    """);
+File.WriteAllText(Path.Combine(nested, "src", "main.cs"), """
+    using System.IO;
+    using Hosihikari;
+
+    public sealed class NestedPlugin : IPlugin
+    {
+        public void OnLoad(IPluginContext context)
+            => File.WriteAllText(Path.Combine(context.DataDirectory, "nested.txt"), ProviderPrivateDependency.Marker.Value);
+        public PluginHookResult OnEnable() => PluginHookResult.Allow();
+        public PluginHookResult OnDisable() => PluginHookResult.Allow();
+        public void OnUnload() { }
+    }
+    """);
+var nestedLoaded = host.Load(nested);
+var nestedFile = Path.Combine(dataRoot, "Nested", "nested.txt");
+var nestedText = File.Exists(nestedFile) ? File.ReadAllText(nestedFile) : "(missing)";
+checks.Add(("子目录入口仍能引用包根依赖", nestedLoaded && nestedText == "private-dependency",
+    $"loaded={nestedLoaded} nested={nestedText}"));
+host.Unload("Nested");
 
 Console.WriteLine();
 Console.WriteLine("=== 断言 ===");

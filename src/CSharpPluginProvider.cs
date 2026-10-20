@@ -57,45 +57,78 @@ public sealed class CSharpPluginProvider : IPluginProvider
             // 没有、或校验和对不上 —— 都丢弃重编，绝不"验不过也照跑"。
             if (Directory.Exists(cacheDirectory))
             {
-                Directory.Delete(cacheDirectory, recursive: true);
+                try
+                {
+                    Directory.Delete(cacheDirectory, recursive: true);
+                }
+                catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+                {
+                    // 还有 ALC 钉着这份产物时删不掉；不要把坏缓存当成能编译。
+                    context.Logger.LogError(ex, "清不掉损坏的缓存目录 {Directory}", cacheDirectory);
+                    return null;
+                }
             }
 
-            if (!Compile(entry, cacheDirectory, manifest.Name, context))
+            if (!Compile(entry, packageDirectory, cacheDirectory, manifest.Name, context))
             {
                 return null;
             }
         }
 
         var loadContext = new ScriptLoadContext(assemblyPath, cacheDirectory, packageDirectory);
-        var assembly = loadContext.LoadFromAssemblyPath(assemblyPath);
-
-        var entryType = assembly.GetTypes().FirstOrDefault(candidate =>
-            typeof(IPlugin).IsAssignableFrom(candidate)
-            && candidate is { IsAbstract: false, IsInterface: false }
-            && candidate.GetConstructor(System.Type.EmptyTypes) is not null);
-        if (entryType is null)
+        try
         {
-            context.Logger.LogError("{Assembly} 里没有实现 IPlugin 且有无参构造的类型", assemblyPath);
-            loadContext.Unload();
+            var assembly = loadContext.LoadFromAssemblyPath(assemblyPath);
+            var candidates = assembly.GetTypes()
+                .Where(candidate => typeof(IPlugin).IsAssignableFrom(candidate)
+                                    && candidate is { IsAbstract: false, IsInterface: false }
+                                    && candidate.GetConstructor(System.Type.EmptyTypes) is not null)
+                .ToArray();
+            if (candidates.Length != 1)
+            {
+                context.Logger.LogError(
+                    "{Assembly} 需要恰好一个实现 IPlugin 且有无参构造的类型，实际 {Count} 个",
+                    assemblyPath,
+                    candidates.Length);
+                loadContext.Unload();
+                return null;
+            }
+
+            if (Activator.CreateInstance(candidates[0]) is not IPlugin plugin)
+            {
+                context.Logger.LogError("造不出 {Type} 的实例", candidates[0].FullName);
+                loadContext.Unload();
+                return null;
+            }
+
+            return new CompiledPluginInstance(plugin, loadContext);
+        }
+        catch (Exception ex)
+        {
+            context.Logger.LogError(ex, "装载 {Name} 的产物失败", manifest.Name);
+            try
+            {
+                loadContext.Unload();
+            }
+            catch (Exception unloadEx)
+            {
+                context.Logger.LogWarning(unloadEx, "回收 {Name} 的失败产物时抛出", manifest.Name);
+            }
+
             return null;
         }
-
-        if (Activator.CreateInstance(entryType) is not IPlugin plugin)
-        {
-            context.Logger.LogError("造不出 {Type} 的实例", entryType.FullName);
-            loadContext.Unload();
-            return null;
-        }
-
-        return new CompiledPluginInstance(plugin, loadContext);
     }
 
     /// <summary>脚本内容 + 包内自带的依赖 + Roslyn 版本 + 运行时版本，xxhash128 后取十六进制。</summary>
     private static string CacheKey(string script, string packageDirectory)
     {
         var hasher = new XxHash128();
+        hasher.Append(Encoding.UTF8.GetBytes("csharp-cache-1"));
         hasher.Append(Encoding.UTF8.GetBytes(script));
         hasher.Append(Encoding.UTF8.GetBytes(typeof(CSharpCompilation).Assembly.GetName().Version?.ToString() ?? "?"));
+        hasher.Append(Encoding.UTF8.GetBytes(typeof(IPlugin).Assembly.GetName().Version?.ToString() ?? "?"));
+        hasher.Append(Encoding.UTF8.GetBytes(typeof(CSharpPluginProvider).Assembly.GetName().Version?.ToString() ?? "?"));
+        hasher.Append(Encoding.UTF8.GetBytes(System.Runtime.InteropServices.RuntimeInformation.RuntimeIdentifier));
         hasher.Append(Encoding.UTF8.GetBytes(Environment.Version.ToString()));
 
         // 包内自带的依赖也参与寻址 —— 换了 dll 就该重编。
@@ -148,7 +181,7 @@ public sealed class CSharpPluginProvider : IPluginProvider
         return string.Equals(expected, actual, StringComparison.OrdinalIgnoreCase);
     }
 
-    private bool Compile(string scriptPath, string cacheDirectory, string name, IPluginContext context)
+    private bool Compile(string scriptPath, string packageDirectory, string cacheDirectory, string name, IPluginContext context)
     {
         // 编到临时目录，成功了再原子改名 —— 崩在中间不会留下半个产物。
         var staging = cacheDirectory + ".tmp";
@@ -162,7 +195,7 @@ public sealed class CSharpPluginProvider : IPluginProvider
             Directory.CreateDirectory(staging);
 
             var assemblyPath = Path.Combine(staging, name + ".dll");
-            if (!CompileTo(scriptPath, assemblyPath, context))
+            if (!CompileTo(scriptPath, packageDirectory, assemblyPath, context))
             {
                 return false;
             }
@@ -197,7 +230,7 @@ public sealed class CSharpPluginProvider : IPluginProvider
         }
     }
 
-    private static bool CompileTo(string scriptPath, string assemblyPath, IPluginContext context)
+    private static bool CompileTo(string scriptPath, string packageDirectory, string assemblyPath, IPluginContext context)
     {
         // 第四个参数是编码：不给它，Roslyn 拒绝为这段源码发 PDB（CS8055）。
         var tree = CSharpSyntaxTree.ParseText(
@@ -217,7 +250,7 @@ public sealed class CSharpPluginProvider : IPluginProvider
 
         // 引用 = 宿主的运行时 + 框架自己 ALC 里的那些（契约与它的抽象包都在里面）。
         // 引用 = 宿主的运行时 + 框架自己 ALC 里的那些 + **插件包里自带的依赖**。
-        var references = CollectReferences(Path.GetDirectoryName(scriptPath)!)
+        var references = CollectReferences(packageDirectory)
             .Select(path => MetadataReference.CreateFromFile(path));
 
         var compilation = CSharpCompilation.Create(
@@ -314,7 +347,7 @@ public sealed class CSharpPluginProvider : IPluginProvider
             {
                 Directory.Delete(sibling, recursive: true);
             }
-            catch (IOException)
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
             {
                 // 清不掉就留着 —— 它命中不了新的内容寻址，不会再被加载。
             }
