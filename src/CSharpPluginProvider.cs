@@ -69,7 +69,7 @@ public sealed class CSharpPluginProvider : IPluginProvider
                 }
             }
 
-            if (!Compile(entry, packageDirectory, cacheDirectory, manifest.Name, context))
+            if (!Compile(entry, packageDirectory, cacheDirectory, manifest.Name, context, script))
             {
                 return null;
             }
@@ -181,7 +181,7 @@ public sealed class CSharpPluginProvider : IPluginProvider
         return string.Equals(expected, actual, StringComparison.OrdinalIgnoreCase);
     }
 
-    private bool Compile(string scriptPath, string packageDirectory, string cacheDirectory, string name, IPluginContext context)
+    private bool Compile(string scriptPath, string packageDirectory, string cacheDirectory, string name, IPluginContext context, string script)
     {
         // 编到临时目录，成功了再原子改名 —— 崩在中间不会留下半个产物。
         var staging = cacheDirectory + ".tmp";
@@ -195,7 +195,7 @@ public sealed class CSharpPluginProvider : IPluginProvider
             Directory.CreateDirectory(staging);
 
             var assemblyPath = Path.Combine(staging, name + ".dll");
-            if (!CompileTo(scriptPath, packageDirectory, assemblyPath, context))
+            if (!CompileTo(scriptPath, packageDirectory, assemblyPath, context, script))
             {
                 return false;
             }
@@ -230,11 +230,17 @@ public sealed class CSharpPluginProvider : IPluginProvider
         }
     }
 
-    private static bool CompileTo(string scriptPath, string packageDirectory, string assemblyPath, IPluginContext context)
+    private static bool CompileTo(
+        string scriptPath,
+        string packageDirectory,
+        string assemblyPath,
+        IPluginContext context,
+        string script)
     {
         // 第四个参数是编码：不给它，Roslyn 拒绝为这段源码发 PDB（CS8055）。
+        // 用调用方已经读过、且参与缓存键的同一份文本，避免编译期再读一次时文件被换掉。
         var tree = CSharpSyntaxTree.ParseText(
-            File.ReadAllText(scriptPath),
+            script,
             new CSharpParseOptions(LanguageVersion.Latest),
             scriptPath,
             Encoding.UTF8);
