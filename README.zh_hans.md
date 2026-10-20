@@ -11,6 +11,12 @@ C# 插件因此拿到与其他程序集插件一样的承诺：每插件的依�
 **进程内只留 .NET。** 框架在进程内保留程序集型、C# 与 F# 三个 Provider；其他语言走
 通用的进程外 Provider（`Hosihikari.PluginProvider.Rpc`，ADR-0031）。
 
+## 模板
+
+从 [CSharpPluginTemplate](https://github.com/HosihikariFramework/CSharpPluginTemplate) 开始：复制到
+`plugins/`，改名后重启。预编译程序集用
+[`dotnet new` 模板](https://www.nuget.org/packages/Hosihikari.Plugin.Template)。
+
 ## 插件包长什么样
 
 ```

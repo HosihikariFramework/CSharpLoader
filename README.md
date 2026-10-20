@@ -14,6 +14,12 @@ to IL before the plugin runs, and the provider loads that IL into a collectible 
 in-process. Other languages go through the generic out-of-process provider
 (`Hosihikari.PluginProvider.Rpc`, ADR-0031).
 
+## Templates
+
+Start from [CSharpPluginTemplate](https://github.com/HosihikariFramework/CSharpPluginTemplate): copy
+it into `plugins/`, rename the plugin, and restart. For a precompiled assembly, use the
+[`dotnet new` template](https://www.nuget.org/packages/Hosihikari.Plugin.Template).
+
 ## What a plugin package looks like
 
 ```
