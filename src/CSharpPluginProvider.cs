@@ -312,7 +312,7 @@ public sealed class CSharpPluginProvider : IPluginProvider
     private static string CacheKey(IReadOnlyList<SourceFile> sources, string packageDirectory)
     {
         var hasher = new XxHash128();
-        hasher.Append(Encoding.UTF8.GetBytes("csharp-cache-2"));
+        hasher.Append(Encoding.UTF8.GetBytes("csharp-cache-3"));
         foreach (var source in sources)
         {
             hasher.Append(Encoding.UTF8.GetBytes(Path.GetRelativePath(packageDirectory, source.Path)));
@@ -361,18 +361,26 @@ public sealed class CSharpPluginProvider : IPluginProvider
         FrameworkContext?.Assemblies.Any(loaded => string.Equals(loaded.GetName().Name, name, StringComparison.Ordinal))
         ?? false;
 
-    /// <summary>产物在、且校验和对得上才算能用。</summary>
+    /// <summary>产物与 PDB 都在、且两行校验和都对得上才算能用。</summary>
     private static bool IsUsable(string assemblyPath)
     {
         var checksumPath = assemblyPath + ChecksumSuffix;
-        if (!File.Exists(assemblyPath) || !File.Exists(checksumPath))
+        var pdbPath = Path.ChangeExtension(assemblyPath, ".pdb");
+        if (!File.Exists(assemblyPath) || !File.Exists(pdbPath) || !File.Exists(checksumPath))
         {
             return false;
         }
 
-        var expected = File.ReadAllText(checksumPath).Trim();
-        var actual = Convert.ToHexStringLower(XxHash128.Hash(File.ReadAllBytes(assemblyPath)));
-        return string.Equals(expected, actual, StringComparison.OrdinalIgnoreCase);
+        var expected = File.ReadAllLines(checksumPath);
+        if (expected.Length != 2)
+        {
+            return false;
+        }
+
+        var assemblyHash = Convert.ToHexStringLower(XxHash128.Hash(File.ReadAllBytes(assemblyPath)));
+        var pdbHash = Convert.ToHexStringLower(XxHash128.Hash(File.ReadAllBytes(pdbPath)));
+        return string.Equals(expected[0].Trim(), assemblyHash, StringComparison.OrdinalIgnoreCase)
+               && string.Equals(expected[1].Trim(), pdbHash, StringComparison.OrdinalIgnoreCase);
     }
 
     private bool Compile(
@@ -397,7 +405,10 @@ public sealed class CSharpPluginProvider : IPluginProvider
                 return false;
             }
 
-            var checksum = Convert.ToHexStringLower(XxHash128.Hash(File.ReadAllBytes(assemblyPath)));
+            var pdbPath = Path.ChangeExtension(assemblyPath, ".pdb");
+            var checksum = Convert.ToHexStringLower(XxHash128.Hash(File.ReadAllBytes(assemblyPath)))
+                           + Environment.NewLine
+                           + Convert.ToHexStringLower(XxHash128.Hash(File.ReadAllBytes(pdbPath)));
             File.WriteAllText(assemblyPath + ChecksumSuffix, checksum);
 
             Directory.CreateDirectory(Path.GetDirectoryName(cacheDirectory)!);
