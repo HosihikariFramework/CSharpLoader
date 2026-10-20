@@ -190,7 +190,7 @@ host.Unload("Nested");
 // file-based apps 风格：入口可以 #:include 另一个源码文件；#:package 由打包期还原，
 // 装载期只把指令行换成空行。
 var include = Path.Combine(pluginsRoot, "Include");
-Directory.CreateDirectory(include);
+Directory.CreateDirectory(Path.Combine(include, "parts"));
 File.WriteAllText(Path.Combine(include, "manifest.json"), """
     {
       "name": "Include",
@@ -204,14 +204,14 @@ File.WriteAllText(Path.Combine(include, "manifest.json"), """
       "extraInfo": { "api": "2", "format_version": "1", "provider": "csharp" }
     }
     """);
-File.WriteAllText(Path.Combine(include, "helper.cs"), """
+File.WriteAllText(Path.Combine(include, "parts", "helper.cs"), """
     public static class IncludeHelper
     {
         public static string Value => "included";
     }
     """);
 File.WriteAllText(Path.Combine(include, "main.cs"), """
-    #:include helper.cs
+    #:include parts/*.cs
     #:package NotNeeded@1.0.0
     using System.IO;
     using Hosihikari;

@@ -75,8 +75,9 @@ plugin does — including the type-keyed channels.
 
 `main.cs` may start with `#:package Id@Version` and `#:include path.cs`, matching .NET file-based
 apps. The provider strips them before Roslyn compiles. The packer restores packages at pack time
-into the plugin package and copies included files; the server stays offline. `#:project`,
-`#:property`, `#:sdk`, top-level statements, and glob includes are not supported.
+into the plugin package and copies included files; the server stays offline. `#:include` supports
+`*`, `**`, and `?` globs. `#:project`, `#:property`, `#:sdk`, and top-level statements are not
+supported.
 
 ## How it compiles
 

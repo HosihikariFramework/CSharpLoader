@@ -70,7 +70,8 @@ public sealed class HelloPlugin : IPlugin
 
 `main.cs` 开头可以写 `#:package Id@Version` 与 `#:include path.cs`，与 .NET file-based apps
 对齐。Provider 在 Roslyn 编译前把它们换成空行；打包器在打包期把包还原进插件包并复制被 include
-的文件，服务端保持离线。`#:project`、`#:property`、`#:sdk`、顶层语句与通配符 include 不支持。
+的文件，服务端保持离线。`#:include` 支持 `*`、`**`、`?` 通配符。`#:project`、`#:property`、
+`#:sdk` 与顶层语句不支持。
 
 ## 它怎么编译
 

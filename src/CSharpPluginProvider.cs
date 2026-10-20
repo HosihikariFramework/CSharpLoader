@@ -2,6 +2,7 @@ using System.IO.Hashing;
 using System.Reflection;
 using System.Runtime.Loader;
 using System.Text;
+using System.Text.RegularExpressions;
 
 using Hosihikari;
 using Microsoft.CodeAnalysis;
@@ -173,6 +174,12 @@ public sealed class CSharpPluginProvider : IPluginProvider
                 return;
             }
 
+            if (!full.EndsWith(".cs", StringComparison.OrdinalIgnoreCase))
+            {
+                error = $"#:include 只支持 .cs：{path}";
+                return;
+            }
+
             string[] lines;
             try
             {
@@ -205,7 +212,25 @@ public sealed class CSharpPluginProvider : IPluginProvider
                     }
 
                     var baseDirectory = Path.GetDirectoryName(full)!;
-                    Visit(Path.Combine(baseDirectory, include));
+                    if (include.IndexOfAny(['*', '?']) >= 0)
+                    {
+                        var matches = ExpandGlob(baseDirectory, include);
+                        if (matches.Length == 0)
+                        {
+                            error = $"{path}: #:include 没有匹配到文件：{include}";
+                            return;
+                        }
+
+                        foreach (var match in matches)
+                        {
+                            Visit(match);
+                        }
+                    }
+                    else
+                    {
+                        Visit(Path.Combine(baseDirectory, include));
+                    }
+
                     continue;
                 }
 
@@ -228,6 +253,58 @@ public sealed class CSharpPluginProvider : IPluginProvider
     private static bool IsDirective(string line, string directive) =>
         line.StartsWith(directive, StringComparison.Ordinal)
         && (line.Length == directive.Length || char.IsWhiteSpace(line[directive.Length]));
+
+    /// <summary>按 file-based apps 的常见 glob 语义匹配：<c>*</c> 段内、<c>**</c> 跨目录、<c>?</c> 单字符。</summary>
+    private static string[] ExpandGlob(string baseDirectory, string pattern)
+    {
+        var normalized = pattern.Replace('\\', '/');
+        var regex = new Regex(GlobToRegex(normalized), RegexOptions.CultureInvariant);
+        return Directory
+            .EnumerateFiles(baseDirectory, "*", SearchOption.AllDirectories)
+            .Where(file => file.EndsWith(".cs", StringComparison.OrdinalIgnoreCase))
+            .Where(file => regex.IsMatch(Path.GetRelativePath(baseDirectory, file).Replace('\\', '/')))
+            .OrderBy(file => file, StringComparer.Ordinal)
+            .ToArray();
+    }
+
+    private static string GlobToRegex(string pattern)
+    {
+        var builder = new StringBuilder("^");
+        for (var index = 0; index < pattern.Length; index++)
+        {
+            var character = pattern[index];
+            if (character == '*')
+            {
+                if (index + 1 < pattern.Length && pattern[index + 1] == '*')
+                {
+                    index++;
+                    if (index + 1 < pattern.Length && pattern[index + 1] == '/')
+                    {
+                        index++;
+                        builder.Append("(?:.*/)?");
+                    }
+                    else
+                    {
+                        builder.Append(".*");
+                    }
+                }
+                else
+                {
+                    builder.Append("[^/]*");
+                }
+            }
+            else if (character == '?')
+            {
+                builder.Append("[^/]");
+            }
+            else
+            {
+                builder.Append(Regex.Escape(character.ToString()));
+            }
+        }
+
+        return builder.Append('$').ToString();
+    }
 
     private sealed record SourceFile(string Path, string Text);
 
@@ -306,15 +383,12 @@ public sealed class CSharpPluginProvider : IPluginProvider
         IPluginContext context,
         IReadOnlyList<SourceFile> sources)
     {
-        // 编到临时目录，成功了再原子改名 —— 崩在中间不会留下半个产物。
-        var staging = cacheDirectory + ".tmp";
+        // 编到唯一的临时目录，成功了再原子改名 —— 崩在中间不会留下半个产物，
+        // 两个进程同时编同一份内容也不会踩同一个 .tmp。
+        var staging = cacheDirectory + ".tmp-" + Guid.NewGuid().ToString("N");
 
         try
         {
-            if (Directory.Exists(staging))
-            {
-                Directory.Delete(staging, recursive: true);
-            }
             Directory.CreateDirectory(staging);
 
             var assemblyPath = Path.Combine(staging, name + ".dll");
@@ -327,7 +401,16 @@ public sealed class CSharpPluginProvider : IPluginProvider
             File.WriteAllText(assemblyPath + ChecksumSuffix, checksum);
 
             Directory.CreateDirectory(Path.GetDirectoryName(cacheDirectory)!);
-            Directory.Move(staging, cacheDirectory);
+            try
+            {
+                Directory.Move(staging, cacheDirectory);
+            }
+            catch (IOException) when (Directory.Exists(cacheDirectory) && IsUsable(Path.Combine(cacheDirectory, name + ".dll")))
+            {
+                // 另一个进程已经先落好了同一份内容。
+                return true;
+            }
+
             PruneSiblings(cacheDirectory);
             return true;
         }
