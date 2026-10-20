@@ -187,6 +187,52 @@ checks.Add(("子目录入口仍能引用包根依赖", nestedLoaded && nestedTex
     $"loaded={nestedLoaded} nested={nestedText}"));
 host.Unload("Nested");
 
+// file-based apps 风格：入口可以 #:include 另一个源码文件；#:package 由打包期还原，
+// 装载期只把指令行换成空行。
+var include = Path.Combine(pluginsRoot, "Include");
+Directory.CreateDirectory(include);
+File.WriteAllText(Path.Combine(include, "manifest.json"), """
+    {
+      "name": "Include",
+      "entry": "main.cs",
+      "type": "hosihikari",
+      "version": "1.0.0",
+      "dependencies": [
+        { "name": "hosihikari" },
+        { "name": "hosihikari-csharp" }
+      ],
+      "extraInfo": { "api": "2", "format_version": "1", "provider": "csharp" }
+    }
+    """);
+File.WriteAllText(Path.Combine(include, "helper.cs"), """
+    public static class IncludeHelper
+    {
+        public static string Value => "included";
+    }
+    """);
+File.WriteAllText(Path.Combine(include, "main.cs"), """
+    #:include helper.cs
+    #:package NotNeeded@1.0.0
+    using System.IO;
+    using Hosihikari;
+
+    public sealed class IncludePlugin : IPlugin
+    {
+        public void OnLoad(IPluginContext context)
+            => File.WriteAllText(Path.Combine(context.DataDirectory, "include.txt"), IncludeHelper.Value);
+        public PluginHookResult OnEnable() => PluginHookResult.Allow();
+        public PluginHookResult OnDisable() => PluginHookResult.Allow();
+        public void OnUnload() { }
+    }
+    """);
+var includeLoaded = host.Load(include);
+var includeFile = Path.Combine(dataRoot, "Include", "include.txt");
+var includeText = File.Exists(includeFile) ? File.ReadAllText(includeFile) : "(missing)";
+checks.Add(("C# 入口支持 #:include，装载期忽略 #:package",
+    includeLoaded && includeText == "included",
+    $"loaded={includeLoaded} include={includeText}"));
+host.Unload("Include");
+
 Console.WriteLine();
 Console.WriteLine("=== 断言 ===");
 foreach (var (name, passed, detail) in checks)

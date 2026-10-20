@@ -47,9 +47,14 @@ public sealed class CSharpPluginProvider : IPluginProvider
             return null;
         }
 
-        // 内容寻址：目录名就把"脚本内容 + 编译器 + 运行时"钉死了。脚本改了就是另一个目录。
-        var script = File.ReadAllText(entry);
-        var cacheDirectory = Path.Combine(context.DataDirectory, "bin", CacheKey(script, packageDirectory));
+        // 内容寻址：目录名把入口、#:include 的文件、依赖、编译器与运行时一起钉死。
+        var sources = LoadSources(entry, packageDirectory, context);
+        if (sources is null)
+        {
+            return null;
+        }
+
+        var cacheDirectory = Path.Combine(context.DataDirectory, "bin", CacheKey(sources, packageDirectory));
         var assemblyPath = Path.Combine(cacheDirectory, manifest.Name + ".dll");
 
         if (!IsUsable(assemblyPath))
@@ -69,7 +74,7 @@ public sealed class CSharpPluginProvider : IPluginProvider
                 }
             }
 
-            if (!Compile(entry, packageDirectory, cacheDirectory, manifest.Name, context, script))
+            if (!Compile(entry, packageDirectory, cacheDirectory, manifest.Name, context, sources))
             {
                 return null;
             }
@@ -119,12 +124,124 @@ public sealed class CSharpPluginProvider : IPluginProvider
         }
     }
 
-    /// <summary>脚本内容 + 包内自带的依赖 + Roslyn 版本 + 运行时版本，xxhash128 后取十六进制。</summary>
-    private static string CacheKey(string script, string packageDirectory)
+    /// <summary>
+    /// 读入口与它通过 <c>#:include</c> 引入的文件；<c>#:package</c> 与 <c>#:include</c> 行
+    /// 在编译前换成空行，保住原始行号。文件必须留在插件包内。
+    /// </summary>
+    private static List<SourceFile>? LoadSources(
+        string entry,
+        string packageDirectory,
+        IPluginContext context)
+    {
+        var root = Path.GetFullPath(packageDirectory);
+        var prefix = root.EndsWith(Path.DirectorySeparatorChar) ? root : root + Path.DirectorySeparatorChar;
+        var comparison = OperatingSystem.IsWindows()
+            ? StringComparison.OrdinalIgnoreCase
+            : StringComparison.Ordinal;
+        var visited = new HashSet<string>(OperatingSystem.IsWindows()
+            ? StringComparer.OrdinalIgnoreCase
+            : StringComparer.Ordinal);
+        var sources = new List<SourceFile>();
+        string? error = null;
+
+        void Visit(string path)
+        {
+            if (error is not null)
+            {
+                return;
+            }
+
+            string full;
+            try
+            {
+                full = Path.GetFullPath(path);
+            }
+            catch (Exception ex) when (ex is ArgumentException or NotSupportedException or PathTooLongException)
+            {
+                error = $"源码路径无效：{path}";
+                return;
+            }
+
+            if (!full.StartsWith(prefix, comparison))
+            {
+                error = $"#:include 出界：{path}";
+                return;
+            }
+
+            if (!visited.Add(full))
+            {
+                return;
+            }
+
+            string[] lines;
+            try
+            {
+                lines = File.ReadAllLines(full);
+            }
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+            {
+                error = $"读不了源码 {path}：{ex.Message}";
+                return;
+            }
+
+            var stripped = new string[lines.Length];
+            for (var index = 0; index < lines.Length; index++)
+            {
+                var trimmed = lines[index].TrimStart();
+                if (IsDirective(trimmed, "#:package"))
+                {
+                    stripped[index] = "";
+                    continue;
+                }
+
+                if (IsDirective(trimmed, "#:include"))
+                {
+                    stripped[index] = "";
+                    var include = trimmed["#:include".Length..].Trim();
+                    if (include.Length == 0)
+                    {
+                        error = $"{path}: #:include 缺少路径";
+                        return;
+                    }
+
+                    var baseDirectory = Path.GetDirectoryName(full)!;
+                    Visit(Path.Combine(baseDirectory, include));
+                    continue;
+                }
+
+                stripped[index] = lines[index];
+            }
+
+            sources.Add(new SourceFile(full, string.Join(Environment.NewLine, stripped)));
+        }
+
+        Visit(entry);
+        if (error is not null)
+        {
+            context.Logger.LogError("{Error}", error);
+            return null;
+        }
+
+        return sources;
+    }
+
+    private static bool IsDirective(string line, string directive) =>
+        line.StartsWith(directive, StringComparison.Ordinal)
+        && (line.Length == directive.Length || char.IsWhiteSpace(line[directive.Length]));
+
+    private sealed record SourceFile(string Path, string Text);
+
+    /// <summary>全部源码文件 + 包内自带的依赖 + Roslyn 版本 + 运行时版本，xxhash128 后取十六进制。</summary>
+    private static string CacheKey(IReadOnlyList<SourceFile> sources, string packageDirectory)
     {
         var hasher = new XxHash128();
-        hasher.Append(Encoding.UTF8.GetBytes("csharp-cache-1"));
-        hasher.Append(Encoding.UTF8.GetBytes(script));
+        hasher.Append(Encoding.UTF8.GetBytes("csharp-cache-2"));
+        foreach (var source in sources)
+        {
+            hasher.Append(Encoding.UTF8.GetBytes(Path.GetRelativePath(packageDirectory, source.Path)));
+            hasher.Append(Encoding.UTF8.GetBytes(source.Text));
+        }
+
         hasher.Append(Encoding.UTF8.GetBytes(typeof(CSharpCompilation).Assembly.GetName().Version?.ToString() ?? "?"));
         hasher.Append(Encoding.UTF8.GetBytes(typeof(IPlugin).Assembly.GetName().Version?.ToString() ?? "?"));
         hasher.Append(Encoding.UTF8.GetBytes(typeof(CSharpPluginProvider).Assembly.GetName().Version?.ToString() ?? "?"));
@@ -181,7 +298,13 @@ public sealed class CSharpPluginProvider : IPluginProvider
         return string.Equals(expected, actual, StringComparison.OrdinalIgnoreCase);
     }
 
-    private bool Compile(string scriptPath, string packageDirectory, string cacheDirectory, string name, IPluginContext context, string script)
+    private bool Compile(
+        string scriptPath,
+        string packageDirectory,
+        string cacheDirectory,
+        string name,
+        IPluginContext context,
+        IReadOnlyList<SourceFile> sources)
     {
         // 编到临时目录，成功了再原子改名 —— 崩在中间不会留下半个产物。
         var staging = cacheDirectory + ".tmp";
@@ -195,7 +318,7 @@ public sealed class CSharpPluginProvider : IPluginProvider
             Directory.CreateDirectory(staging);
 
             var assemblyPath = Path.Combine(staging, name + ".dll");
-            if (!CompileTo(scriptPath, packageDirectory, assemblyPath, context, script))
+            if (!CompileTo(packageDirectory, assemblyPath, context, sources))
             {
                 return false;
             }
@@ -231,20 +354,11 @@ public sealed class CSharpPluginProvider : IPluginProvider
     }
 
     private static bool CompileTo(
-        string scriptPath,
         string packageDirectory,
         string assemblyPath,
         IPluginContext context,
-        string script)
+        IReadOnlyList<SourceFile> sources)
     {
-        // 第四个参数是编码：不给它，Roslyn 拒绝为这段源码发 PDB（CS8055）。
-        // 用调用方已经读过、且参与缓存键的同一份文本，避免编译期再读一次时文件被换掉。
-        var tree = CSharpSyntaxTree.ParseText(
-            script,
-            new CSharpParseOptions(LanguageVersion.Latest),
-            scriptPath,
-            Encoding.UTF8);
-
         // 与 SDK 的 ImplicitUsings 对齐：作者不该为 System / IO / Linq 写样板。
         // 单独一棵 global using 的树 —— 编译选项上的 Usings 只对 script 模式生效，
         // 而把 using 拼进脚本会把它的行号整体推移，PDB 里的 file:line 就不准了。
@@ -254,6 +368,16 @@ public sealed class CSharpPluginProvider : IPluginProvider
             "implicit-usings.cs",
             Encoding.UTF8);
 
+        // 第四个参数是编码：不给它，Roslyn 拒绝为这段源码发 PDB（CS8055）。
+        // 每份源码都用调用方读过、且参与缓存键的同一份文本。
+        var trees = sources
+            .Select(source => CSharpSyntaxTree.ParseText(
+                source.Text,
+                new CSharpParseOptions(LanguageVersion.Latest),
+                source.Path,
+                Encoding.UTF8))
+            .ToArray();
+
         // 引用 = 宿主的运行时 + 框架自己 ALC 里的那些（契约与它的抽象包都在里面）。
         // 引用 = 宿主的运行时 + 框架自己 ALC 里的那些 + **插件包里自带的依赖**。
         var references = CollectReferences(packageDirectory)
@@ -261,7 +385,7 @@ public sealed class CSharpPluginProvider : IPluginProvider
 
         var compilation = CSharpCompilation.Create(
             Path.GetFileNameWithoutExtension(assemblyPath),
-            [imports, tree],
+            [imports, ..trees],
             references,
             new CSharpCompilationOptions(OutputKind.DynamicallyLinkedLibrary, optimizationLevel: OptimizationLevel.Release));
 
@@ -280,7 +404,7 @@ public sealed class CSharpPluginProvider : IPluginProvider
 
         foreach (var diagnostic in result.Diagnostics.Where(entry => entry.Severity == DiagnosticSeverity.Error))
         {
-            context.Logger.LogError("{File}: {Message}", scriptPath, diagnostic.ToString());
+            context.Logger.LogError("{Message}", diagnostic.ToString());
         }
 
         return false;

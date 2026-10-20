@@ -71,6 +71,13 @@ public sealed class HelloPlugin : IPlugin
 Because the result is a real assembly referencing the contract, a C# plugin reaches everything any
 plugin does — including the type-keyed channels.
 
+## File-based app directives
+
+`main.cs` may start with `#:package Id@Version` and `#:include path.cs`, matching .NET file-based
+apps. The provider strips them before Roslyn compiles. The packer restores packages at pack time
+into the plugin package and copies included files; the server stays offline. `#:project`,
+`#:property`, `#:sdk`, top-level statements, and glob includes are not supported.
+
 ## How it compiles
 
 `CSharpCompilation` from Roslyn (`Microsoft.CodeAnalysis.CSharp`). The references are the host's
