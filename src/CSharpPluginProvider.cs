@@ -81,7 +81,42 @@ public sealed class CSharpPluginProvider : IPluginProvider
             }
         }
 
-        var loadContext = new ScriptLoadContext(assemblyPath, cacheDirectory, packageDirectory);
+        // 租约放在 bin/ 下、以缓存目录名命名，随 ALC 存活；清理只碰没人租的旧目录。
+        FileStream lease;
+        try
+        {
+            lease = AcquireLease(cacheDirectory);
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            // 另一个进程可能刚把旧缓存清掉；重编一次再租。
+            context.Logger.LogWarning(ex, "缓存目录 {Directory} 已不可用，重编", cacheDirectory);
+            if (!Compile(entry, packageDirectory, cacheDirectory, manifest.Name, context, sources))
+            {
+                return null;
+            }
+
+            try
+            {
+                lease = AcquireLease(cacheDirectory);
+            }
+            catch (Exception retry) when (retry is IOException or UnauthorizedAccessException)
+            {
+                context.Logger.LogError(retry, "无法租用缓存目录 {Directory}", cacheDirectory);
+                return null;
+            }
+        }
+
+        ScriptLoadContext loadContext;
+        try
+        {
+            loadContext = new ScriptLoadContext(assemblyPath, cacheDirectory, packageDirectory, lease);
+        }
+        catch
+        {
+            lease.Dispose();
+            throw;
+        }
         try
         {
             var assembly = loadContext.LoadFromAssemblyPath(assemblyPath);
@@ -551,7 +586,13 @@ public sealed class CSharpPluginProvider : IPluginProvider
         }
     }
 
-    /// <summary>同一个插件只留最新那一份产物；旧的内容寻址目录攒着没有意义。</summary>
+    // 另一个进程可能刚发布、还没装载这份产物；只清超过保留期的目录。
+    private static readonly TimeSpan CacheRetention = TimeSpan.FromHours(1);
+
+    /// <summary>
+    /// 同一个插件只留最新那一份产物；旧目录要过保留期、且没有进程租用时才清。
+    /// 清理与装载通过租约互斥，跨进程共享数据目录时不会删掉对方正在用的缓存。
+    /// </summary>
     private static void PruneSiblings(string cacheDirectory)
     {
         var root = Path.GetDirectoryName(cacheDirectory);
@@ -560,6 +601,7 @@ public sealed class CSharpPluginProvider : IPluginProvider
             return;
         }
 
+        var now = DateTime.UtcNow;
         foreach (var sibling in Directory.EnumerateDirectories(root))
         {
             if (string.Equals(sibling, cacheDirectory, StringComparison.OrdinalIgnoreCase))
@@ -569,20 +611,76 @@ public sealed class CSharpPluginProvider : IPluginProvider
 
             try
             {
-                Directory.Delete(sibling, recursive: true);
+                if (now - Directory.GetLastWriteTimeUtc(sibling) < CacheRetention)
+                {
+                    continue;
+                }
+
+                // 暂存目录没有租约；过了保留期还在，说明留下它的进程已经崩了。
+                if (Path.GetFileName(sibling).Contains(".tmp-", StringComparison.Ordinal))
+                {
+                    Directory.Delete(sibling, recursive: true);
+                    continue;
+                }
+
+                var leasePath = LeasePath(root, sibling);
+                using (new FileStream(leasePath, FileMode.OpenOrCreate, FileAccess.ReadWrite, FileShare.None))
+                {
+                    Directory.Delete(sibling, recursive: true);
+                }
+
+                File.Delete(leasePath);
             }
             catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
             {
-                // 清不掉就留着 —— 它命中不了新的内容寻址，不会再被加载。
+                // 有进程租着，或文件还被占着：留着，下一轮再看。
             }
         }
     }
 
-    /// <summary>每个插件一个 collectible ALC：自己的依赖从自己的目录解析，契约走框架的 ALC。</summary>
-    private sealed class ScriptLoadContext(string mainAssemblyPath, string directory, string packageDirectory)
-        : AssemblyLoadContext(name: Path.GetFileNameWithoutExtension(mainAssemblyPath), isCollectible: true)
+    /// <summary>以缓存目录名为键开一份共享租约；装载期间持有，清理碰到独占打开就跳过。</summary>
+    private static FileStream AcquireLease(string cacheDirectory)
     {
-        private readonly AssemblyDependencyResolver? _resolver = TryCreateResolver(mainAssemblyPath);
+        var root = Path.GetDirectoryName(cacheDirectory)!;
+        var lease = new FileStream(
+            LeasePath(root, cacheDirectory),
+            FileMode.OpenOrCreate,
+            FileAccess.ReadWrite,
+            FileShare.ReadWrite);
+
+        if (Directory.Exists(cacheDirectory))
+        {
+            return lease;
+        }
+
+        lease.Dispose();
+        throw new DirectoryNotFoundException($"缓存目录不存在：{cacheDirectory}");
+    }
+
+    private static string LeasePath(string root, string cacheDirectory) =>
+        Path.Combine(root, Path.GetFileName(cacheDirectory) + ".lease");
+
+    /// <summary>每个插件一个 collectible ALC：自己的依赖从自己的目录解析，契约走框架的 ALC。</summary>
+    private sealed class ScriptLoadContext : AssemblyLoadContext
+    {
+        private readonly AssemblyDependencyResolver? _resolver;
+        private readonly FileStream _lease;
+        private readonly string _directory;
+        private readonly string _packageDirectory;
+
+        public ScriptLoadContext(
+            string mainAssemblyPath,
+            string directory,
+            string packageDirectory,
+            FileStream lease)
+            : base(Path.GetFileNameWithoutExtension(mainAssemblyPath), isCollectible: true)
+        {
+            _resolver = TryCreateResolver(mainAssemblyPath);
+            _directory = directory;
+            _packageDirectory = packageDirectory;
+            _lease = lease;
+            Unloading += _ => _lease.Dispose();
+        }
 
         protected override Assembly? Load(AssemblyName assemblyName)
         {
@@ -600,15 +698,15 @@ public sealed class CSharpPluginProvider : IPluginProvider
             }
 
             var path = _resolver?.ResolveAssemblyToPath(assemblyName)
-                       ?? Existing(Path.Combine(directory, assemblyName.Name + ".dll"))
-                       ?? Existing(Path.Combine(packageDirectory, assemblyName.Name + ".dll"));
+                       ?? Existing(Path.Combine(_directory, assemblyName.Name + ".dll"))
+                       ?? Existing(Path.Combine(_packageDirectory, assemblyName.Name + ".dll"));
             return path is null ? null : LoadFromAssemblyPath(path);
         }
 
         protected override IntPtr LoadUnmanagedDll(string unmanagedDllName)
         {
             // 本机库随进程存活；这里只负责按 RID → 包根的顺序找到它（ADR-0034）。
-            var path = FindNativeLibrary(packageDirectory, unmanagedDllName);
+            var path = FindNativeLibrary(_packageDirectory, unmanagedDllName);
             return path is null ? IntPtr.Zero : LoadUnmanagedDllFromPath(path);
         }
 

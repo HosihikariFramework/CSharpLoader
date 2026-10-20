@@ -119,6 +119,44 @@ var pdbRepaired = artifact is not null && IsChecksumValid(artifact);
 checks.Add(("PDB 被改坏后也重编", recoveredPdb && pdbRepaired, pdbRepaired ? "已重编" : "校验仍不符"));
 host.Unload("Hello");
 
+// 跨进程清理：新产物与暂存目录留下，过期目录只有在没人租用时才删。
+var cacheRoot = Path.Combine(dataDirectory, "bin");
+var freshPeer = Path.Combine(cacheRoot, "peer-fresh");
+var stalePeer = Path.Combine(cacheRoot, "peer-stale");
+var leasedPeer = Path.Combine(cacheRoot, "peer-leased");
+var freshStaging = Path.Combine(cacheRoot, "peer-live.tmp-1");
+var staleStaging = Path.Combine(cacheRoot, "peer-dead.tmp-2");
+foreach (var directory in new[] { freshPeer, stalePeer, leasedPeer, freshStaging, staleStaging })
+{
+    Directory.CreateDirectory(directory);
+    File.WriteAllText(Path.Combine(directory, "marker"), "x");
+}
+var old = DateTime.UtcNow - TimeSpan.FromHours(2);
+Directory.SetLastWriteTimeUtc(stalePeer, old);
+Directory.SetLastWriteTimeUtc(leasedPeer, old);
+Directory.SetLastWriteTimeUtc(staleStaging, old);
+using (var peerLease = new FileStream(
+           Path.Combine(cacheRoot, "peer-leased.lease"),
+           FileMode.OpenOrCreate,
+           FileAccess.ReadWrite,
+           FileShare.ReadWrite))
+{
+    File.AppendAllText(Path.Combine(pluginsRoot, "Hello", "main.cs"), "\n// cache-prune-probe\n");
+    var pruned = host.Load(Path.Combine(pluginsRoot, "Hello"));
+    checks.Add((
+        "跨进程缓存清理保留新产物、暂存与租约",
+        pruned
+        && Directory.Exists(freshPeer)
+        && !Directory.Exists(stalePeer)
+        && Directory.Exists(leasedPeer)
+        && Directory.Exists(freshStaging)
+        && !Directory.Exists(staleStaging),
+        $"fresh={Directory.Exists(freshPeer)} stale={Directory.Exists(stalePeer)} "
+        + $"leased={Directory.Exists(leasedPeer)} liveTmp={Directory.Exists(freshStaging)} "
+        + $"deadTmp={Directory.Exists(staleStaging)}"));
+}
+host.Unload("Hello");
+
 // 构造函数抛出时，Provider 必须回收 ALC 并交回 null；否则每次重试都泄漏一个 ALC。
 var broken = Path.Combine(pluginsRoot, "Broken");
 Directory.CreateDirectory(broken);
