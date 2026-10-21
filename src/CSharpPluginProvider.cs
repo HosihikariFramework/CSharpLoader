@@ -239,7 +239,8 @@ public sealed class CSharpPluginProvider : IPluginProvider
                 if (IsDirective(trimmed, "#:include"))
                 {
                     stripped[index] = "";
-                    var include = trimmed["#:include".Length..].Trim();
+                    // 与打包器同形：允许用双引号包住路径。
+                    var include = trimmed["#:include".Length..].Trim().Trim('"');
                     if (include.Length == 0)
                     {
                         error = $"{path}: #:include 缺少路径";
@@ -249,7 +250,7 @@ public sealed class CSharpPluginProvider : IPluginProvider
                     var baseDirectory = Path.GetDirectoryName(full)!;
                     if (include.IndexOfAny(['*', '?']) >= 0)
                     {
-                        var matches = ExpandGlob(baseDirectory, include);
+                        var matches = ExpandGlob(root, baseDirectory, include);
                         if (matches.Length == 0)
                         {
                             error = $"{path}: #:include 没有匹配到文件：{include}";
@@ -290,12 +291,13 @@ public sealed class CSharpPluginProvider : IPluginProvider
         && (line.Length == directive.Length || char.IsWhiteSpace(line[directive.Length]));
 
     /// <summary>按 file-based apps 的常见 glob 语义匹配：<c>*</c> 段内、<c>**</c> 跨目录、<c>?</c> 单字符。</summary>
-    private static string[] ExpandGlob(string baseDirectory, string pattern)
+    private static string[] ExpandGlob(string packageRoot, string baseDirectory, string pattern)
     {
+        // 从包根枚举：相对路径里可以带 ..，按模板目录枚举会漏掉兄弟目录。
         var normalized = pattern.Replace('\\', '/');
         var regex = new Regex(GlobToRegex(normalized), RegexOptions.CultureInvariant);
         return Directory
-            .EnumerateFiles(baseDirectory, "*", SearchOption.AllDirectories)
+            .EnumerateFiles(packageRoot, "*", SearchOption.AllDirectories)
             .Where(file => file.EndsWith(".cs", StringComparison.OrdinalIgnoreCase))
             .Where(file => regex.IsMatch(Path.GetRelativePath(baseDirectory, file).Replace('\\', '/')))
             .OrderBy(file => file, StringComparer.Ordinal)

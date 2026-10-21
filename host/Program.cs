@@ -281,6 +281,51 @@ checks.Add(("C# 入口支持 #:include，装载期忽略 #:package",
     $"loaded={includeLoaded} include={includeText}"));
 host.Unload("Include");
 
+// 引号与 ../ 兄弟目录：打包器与 Provider 必须用同一套路径解析。
+var quoted = Path.Combine(pluginsRoot, "QuotedInclude");
+Directory.CreateDirectory(Path.Combine(quoted, "src"));
+Directory.CreateDirectory(Path.Combine(quoted, "shared"));
+File.WriteAllText(Path.Combine(quoted, "manifest.json"), """
+    {
+      "name": "QuotedInclude",
+      "entry": "src/main.cs",
+      "type": "hosihikari",
+      "version": "1.0.0",
+      "dependencies": [
+        { "name": "hosihikari" },
+        { "name": "hosihikari-csharp" }
+      ],
+      "extraInfo": { "api": "2", "format_version": "1", "provider": "csharp" }
+    }
+    """);
+File.WriteAllText(Path.Combine(quoted, "shared", "helper.cs"), """
+    public static class QuotedHelper
+    {
+        public static string Value => "quoted";
+    }
+    """);
+File.WriteAllText(Path.Combine(quoted, "src", "main.cs"), """
+    #:include "../shared/*.cs"
+    using System.IO;
+    using Hosihikari;
+
+    public sealed class QuotedPlugin : IPlugin
+    {
+        public void OnLoad(IPluginContext context)
+            => File.WriteAllText(Path.Combine(context.DataDirectory, "quoted.txt"), QuotedHelper.Value);
+        public PluginHookResult OnEnable() => PluginHookResult.Allow();
+        public PluginHookResult OnDisable() => PluginHookResult.Allow();
+        public void OnUnload() { }
+    }
+    """);
+var quotedLoaded = host.Load(quoted);
+var quotedFile = Path.Combine(dataRoot, "QuotedInclude", "quoted.txt");
+var quotedText = File.Exists(quotedFile) ? File.ReadAllText(quotedFile) : "(missing)";
+checks.Add(("带引号的 #:include 与 ../ 通配符可用",
+    quotedLoaded && quotedText == "quoted",
+    $"loaded={quotedLoaded} quoted={quotedText}"));
+host.Unload("QuotedInclude");
+
 Console.WriteLine();
 Console.WriteLine("=== 断言 ===");
 foreach (var (name, passed, detail) in checks)
