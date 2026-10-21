@@ -1,21 +1,21 @@
-# Hosihikari.PluginProvider.CSharp
+# Hosihikari.PluginLoader.CSharp
 
 [English](README.md) | [简体中文](README.zh_hans.md)
 
-星光框架的 **C# 型插件 Provider**。与 F# 一样，C# 直接跑在 CLR 上，所以这个 Provider **装载时编译**：
+星光框架的 **C# 型插件加载器**。与 F# 一样，C# 直接跑在 CLR 上，所以这个加载器 **装载时编译**：
 Roslyn 把 `.cs` 编成真程序集，再进一个 collectible ALC。
 
 C# 插件因此拿到与其他程序集插件一样的承诺：每插件的依赖互相隔离，卸载是真的验证过而不是假定的。
-这是一等 Provider：在插件开始运行前把源码 AOT 为 IL，Provider 把 IL 装进 collectible ALC。
+这是进程内加载器：在插件开始运行前把源码编译为 IL，加载器把 IL 装进 collectible ALC。
 
-**进程内只留 .NET。** 框架在进程内保留程序集型、C# 与 F# 三个 Provider；其他语言走
-通用的进程外 Provider（`Hosihikari.PluginProvider.Rpc`，ADR-0031）。
+**进程内只留 .NET。** 框架在进程内保留程序集型、C# 与 F# 三个加载器；其他语言走
+通用的进程外加载器（`Hosihikari.PluginLoader.Rpc`，ADR-0031）。
 
 ## 模板
 
 从 [CSharpPluginTemplate](https://github.com/HosihikariFramework/CSharpPluginTemplate) 开始：复制到
 `plugins/`，改名后重启。预编译程序集用
-[`dotnet new` 模板](https://www.nuget.org/packages/Hosihikari.Plugin.Template)。
+[`dotnet new` 模板](https://www.nuget.org/packages/Hosihikari.Plugin.Templates)。
 
 ## 插件包长什么样
 
@@ -31,13 +31,13 @@ plugins/Hello/
         { "name": "hosihikari" },
         { "name": "hosihikari-csharp" }
       ],
-      "extraInfo": { "api": "2", "format_version": "1", "provider": "csharp" }
+      "extraInfo": { "api_version": "2", "manifest_version": "1", "loader": "csharp" }
     }
   main.cs
   Hello.conf          ← 作者给的默认值，随包更新
 ```
 
-文件里定义一个实现 `IPlugin`、有无参构造的类型；找到它是 Provider 的事。
+文件里定义一个实现 `IPlugin`、有无参构造的类型；找到它是加载器的事。
 
 ```csharp
 using System.IO;
@@ -69,7 +69,7 @@ public sealed class HelloPlugin : IPlugin
 ## file-based 指令
 
 `main.cs` 开头可以写 `#:package Id@Version` 与 `#:include path.cs`，与 .NET file-based apps
-对齐。Provider 在 Roslyn 编译前把它们换成空行；打包器在打包期把包还原进插件包并复制被 include
+对齐。加载器在 Roslyn 编译前把它们换成空行；打包器在打包期把包还原进插件包并复制被 include
 的文件，服务端保持离线。`#:include` 支持 `*`、`**`、`?` 通配符。`#:project`、`#:property`、
 `#:sdk` 与顶层语句不支持。
 
@@ -89,18 +89,18 @@ public sealed class HelloPlugin : IPlugin
 ## 跑一遍
 
 ```
-dotnet run --project host/Hosihikari.PluginProvider.CSharp.Host.csproj -c Release
+dotnet run --project host/Hosihikari.PluginLoader.CSharp.Host.csproj -c Release
 ```
 
-验证宿主借核心的 `PluginManagerHost` 驱动它，所以需要并列的 `Hosihikari.PluginManager`、
-`Hosihikari.Abstractions` 与 McMaster 的 fork checkout。它验证：Provider 由插件包登记、产物按内容寻址落盘且带校验和
+验证宿主借插件管理者的 `PluginManager` 驱动它，所以需要并列的 `Hosihikari.PluginManager`、
+契约仓检出（契约包 `Hosihikari.Plugin.Abstractions`）与 McMaster 的 fork checkout。它验证：加载器由插件包登记、产物按内容寻址落盘且带校验和
 与 PDB、源码装载时编译并读到包外覆盖、启用钩子到达插件、宿主发的通道消息它能收到、包内自带的第三方依赖
 可用、本机库按 RID 目录解析、停用与卸载钩子到达、卸载验证通过、同一份源码再装载命中缓存、以及产物被改坏后会被发现并重编。
 测试还会构建宿主没有引用的独立 DLL，验证真正私有的依赖也能在插件中使用。
 
 ## 它怎么进宿主进程
 
-作为插件包，名字是 `hosihikari-csharp` —— 与其他进程内 Provider 同一套。源码包声明依赖，依赖图先排它。
+作为插件包，名字是 `hosihikari-csharp` —— 与其他进程内加载器同一套。源码包声明依赖，依赖图先排它。
 
 **登记之后不能撤销**：它造出来的类型住在它的装载上下文里。
 
@@ -110,9 +110,9 @@ dotnet run --project host/Hosihikari.PluginProvider.CSharp.Host.csproj -c Releas
 pwsh ./pack.ps1 -Version 0.2.3 -OutputRoot artifacts
 ```
 
-它把 Provider DLL、私有依赖与清单装进 `hosihikari-csharp/`，共享层不随包走；打 `v*` 标签时 CI 把 zip 附到 release（ADR-0036）。
+它把加载器 DLL、私有依赖与清单装进 `hosihikari-csharp/`，共享层不随包走；打 `v*` 标签时 CI 把 zip 附到 release（ADR-0036）。
 
-打包脚本调用核心打包器（`Hosihikari.PluginManager/tools/Pack`），共享层清单由核心统一给出；需要并列检出核心仓，或设置 `HOSIHIKARI_PLUGINMANAGER`。
+打包脚本调用插件管理者打包器（`Hosihikari.PluginManager/tools/Pack`），共享层清单由插件管理者统一给出；需要并列检出插件管理者仓，或设置 `HOSIHIKARI_PLUGINMANAGER`。
 
 发布后：`lip install github.com/HosihikariFramework/CSharpProvider`（先按载体装 Shim）。
 

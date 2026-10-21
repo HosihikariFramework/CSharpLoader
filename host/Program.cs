@@ -1,13 +1,12 @@
 using System.Runtime.Loader;
 using Hosihikari;
-using Hosihikari.PluginManagement;
-using Hosihikari.PluginProvider.CSharp;
+using Hosihikari.PluginLoader.CSharp;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 
 // 载体中立检查（ADR-0015）：普通 .NET 控制台驱动核心，不碰 BDS、Shim、任何载体。
 //
-// 宿主不直接注册 C# Provider —— 它把 Provider 当成一个插件包装进去，由那个包在 OnLoad
+// 宿主不直接注册 C# 加载器 —— 它把加载器当成一个插件包装进去，由那个包在 OnLoad
 // 里把自己登记给框架（ADR-0002）。第二步才是 C# 的本体：装载时用 Roslyn 编译，进 collectible ALC。
 var stage = Path.Combine(Path.GetTempPath(), "hosihikari-csharp-spike");
 if (Directory.Exists(stage))
@@ -33,7 +32,7 @@ collection.AddLogging(builder => builder
 var services = collection.BuildServiceProvider();
 
 var reported = new List<string>();
-var host = new PluginManagerHost(
+var host = new PluginManager(
     pluginsRoot,
     dataRoot,
     configRoot,
@@ -43,7 +42,7 @@ var host = new PluginManagerHost(
         Console.WriteLine($"[框架] {entry}");
     },
     services);
-host.AddProvider(new AssemblyPluginProvider());
+host.RegisterLoader(new AssemblyPluginLoader());
 
 Console.WriteLine("=== 加载（含一次 C# 编译） ===");
 host.LoadAll();
@@ -57,7 +56,7 @@ var dataDirectory = Path.Combine(dataRoot, "Hello");
 var checks = new List<(string Name, bool Passed, string Detail)>();
 
 checks.Add((
-    "Provider 由插件包登记，随后的 C# 包被它接管",
+    "Loader 由插件包登记，随后的 C# 包被它接管",
     host.LoadedNames.Contains("hosihikari-csharp") && host.LoadedNames.Contains("Hello"),
     string.Join(", ", host.LoadedNames)));
 
@@ -157,7 +156,7 @@ using (var peerLease = new FileStream(
 }
 host.Unload("Hello");
 
-// 构造函数抛出时，Provider 必须回收 ALC 并交回 null；否则每次重试都泄漏一个 ALC。
+// 构造函数抛出时，加载器必须回收 ALC 并交回 null；否则每次重试都泄漏一个 ALC。
 var broken = Path.Combine(pluginsRoot, "Broken");
 Directory.CreateDirectory(broken);
 File.WriteAllText(Path.Combine(broken, "manifest.json"), """
@@ -170,7 +169,7 @@ File.WriteAllText(Path.Combine(broken, "manifest.json"), """
         { "name": "hosihikari" },
         { "name": "hosihikari-csharp" }
       ],
-      "extraInfo": { "api": "2", "format_version": "1", "provider": "csharp" }
+      "extraInfo": { "api_version": "2", "manifest_version": "1", "loader": "csharp" }
     }
     """);
 File.WriteAllText(Path.Combine(broken, "main.cs"), """
@@ -212,7 +211,7 @@ File.WriteAllText(Path.Combine(nested, "manifest.json"), """
         { "name": "hosihikari" },
         { "name": "hosihikari-csharp" }
       ],
-      "extraInfo": { "api": "2", "format_version": "1", "provider": "csharp" }
+      "extraInfo": { "api_version": "2", "manifest_version": "1", "loader": "csharp" }
     }
     """);
 File.WriteAllText(Path.Combine(nested, "src", "main.cs"), """
@@ -249,7 +248,7 @@ File.WriteAllText(Path.Combine(include, "manifest.json"), """
         { "name": "hosihikari" },
         { "name": "hosihikari-csharp" }
       ],
-      "extraInfo": { "api": "2", "format_version": "1", "provider": "csharp" }
+      "extraInfo": { "api_version": "2", "manifest_version": "1", "loader": "csharp" }
     }
     """);
 File.WriteAllText(Path.Combine(include, "parts", "helper.cs"), """
@@ -281,7 +280,7 @@ checks.Add(("C# 入口支持 #:include，装载期忽略 #:package",
     $"loaded={includeLoaded} include={includeText}"));
 host.Unload("Include");
 
-// 引号与 ../ 兄弟目录：打包器与 Provider 必须用同一套路径解析。
+// 引号与 ../ 兄弟目录：打包器与加载器必须用同一套路径解析。
 var quoted = Path.Combine(pluginsRoot, "QuotedInclude");
 Directory.CreateDirectory(Path.Combine(quoted, "src"));
 Directory.CreateDirectory(Path.Combine(quoted, "shared"));
@@ -295,7 +294,7 @@ File.WriteAllText(Path.Combine(quoted, "manifest.json"), """
         { "name": "hosihikari" },
         { "name": "hosihikari-csharp" }
       ],
-      "extraInfo": { "api": "2", "format_version": "1", "provider": "csharp" }
+      "extraInfo": { "api_version": "2", "manifest_version": "1", "loader": "csharp" }
     }
     """);
 File.WriteAllText(Path.Combine(quoted, "shared", "helper.cs"), """
@@ -339,7 +338,7 @@ File.WriteAllText(Path.Combine(overlapRoot, "manifest.json"), """
         { "name": "hosihikari" },
         { "name": "hosihikari-csharp" }
       ],
-      "extraInfo": { "api": "2", "format_version": "1", "provider": "csharp" }
+      "extraInfo": { "api_version": "2", "manifest_version": "1", "loader": "csharp" }
     }
     """);
 File.WriteAllText(Path.Combine(overlapRoot, "main.cs"), """
@@ -423,7 +422,7 @@ string Read(string file)
     return File.Exists(path) ? File.ReadAllText(path) : "（没写出来）";
 }
 
-// Provider 包：普通程序集型插件，入口在 OnLoad 里登记 C# Provider。
+// Loader 包：普通程序集型插件，入口在 OnLoad 里登记 C# 加载器。
 void StageProviderPackage()
 {
     var package = Path.Combine(pluginsRoot, "hosihikari-csharp");
@@ -432,11 +431,11 @@ void StageProviderPackage()
     File.WriteAllText(Path.Combine(package, "manifest.json"), """
         {
           "name": "hosihikari-csharp",
-          "entry": "Hosihikari.PluginProvider.CSharp.dll",
+          "entry": "Hosihikari.PluginLoader.CSharp.dll",
           "type": "hosihikari",
           "version": "0.1.0",
           "dependencies": [ { "name": "hosihikari" } ],
-          "extraInfo": { "api": "2", "format_version": "1", "provider": "assembly" }
+          "extraInfo": { "api_version": "2", "manifest_version": "1", "loader": "assembly" }
         }
         """);
 
@@ -444,21 +443,21 @@ void StageProviderPackage()
     var output = Path.Combine(RepoRoot(), "src", "bin", ConfigurationName(), "net10.0");
     foreach (var file in Directory.EnumerateFiles(output, "*.dll"))
     {
-        if (Path.GetFileName(file) is "Hosihikari.Abstractions.dll")
+        if (Path.GetFileName(file) is "Hosihikari.Plugin.Abstractions.dll")
         {
             continue;
         }
         File.Copy(file, Path.Combine(package, Path.GetFileName(file)));
     }
 
-    var deps = Path.Combine(output, "Hosihikari.PluginProvider.CSharp.deps.json");
+    var deps = Path.Combine(output, "Hosihikari.PluginLoader.CSharp.deps.json");
     if (File.Exists(deps))
     {
         File.Copy(deps, Path.Combine(package, Path.GetFileName(deps)));
     }
 }
 
-// C# 包：一个 .cs，里面定义实现 IPlugin 的类型 —— 编译与入口发现都是 Provider 的事。
+// C# 包：一个 .cs，里面定义实现 IPlugin 的类型 —— 编译与入口发现都是加载器的事。
 bool StageScriptPackage()
 {
     var package = Path.Combine(pluginsRoot, "Hello");
@@ -474,7 +473,7 @@ bool StageScriptPackage()
             { "name": "hosihikari" },
             { "name": "hosihikari-csharp" }
           ],
-          "extraInfo": { "api": "2", "format_version": "1", "provider": "csharp" }
+          "extraInfo": { "api_version": "2", "manifest_version": "1", "loader": "csharp" }
         }
         """);
 
@@ -641,7 +640,7 @@ static string RepoRoot()
 {
     var directory = new DirectoryInfo(AppContext.BaseDirectory);
     while (directory is not null &&
-           !File.Exists(Path.Combine(directory.FullName, "src", "Hosihikari.PluginProvider.CSharp.csproj")))
+           !File.Exists(Path.Combine(directory.FullName, "src", "Hosihikari.PluginLoader.CSharp.csproj")))
     {
         directory = directory.Parent;
     }

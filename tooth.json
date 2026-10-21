@@ -4,8 +4,8 @@
   "tooth": "github.com/HosihikariFramework/CSharpProvider",
   "version": "0.2.3",
   "info": {
-    "name": "星光 · C# Provider",
-    "description": "星光框架的 C# 型插件 Provider：装载时编译脚本，交给 collectible ALC",
+    "name": "星光 · C# 加载器",
+    "description": "星光框架的 C# 型插件加载器：装载时编译脚本，交给 collectible ALC",
     "tags": [
       "platform:levilamina",
       "platform:endstone",

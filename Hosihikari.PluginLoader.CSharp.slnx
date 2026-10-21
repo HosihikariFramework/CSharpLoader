@@ -1,9 +1,9 @@
 <Solution>
   <Folder Name="/src/">
-    <Project Path="src/Hosihikari.PluginProvider.CSharp.csproj" />
+    <Project Path="src/Hosihikari.PluginLoader.CSharp.csproj" />
   </Folder>
   <Folder Name="/host/">
-    <Project Path="host/Hosihikari.PluginProvider.CSharp.Host.csproj" />
+    <Project Path="host/Hosihikari.PluginLoader.CSharp.Host.csproj" />
   </Folder>
   <Folder Name="/test/">
     <Project Path="test/PrivateDependency/PrivateDependency.csproj" />

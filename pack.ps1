@@ -1,7 +1,7 @@
 <#
-    Assemble the hosihikari-csharp provider package.
+    Assemble the hosihikari-csharp loader package.
 
-    The package is a plugin package itself: provider DLL, private dependencies and
+    The package is a plugin package itself: loader DLL, private dependencies and
     manifest. Shared-layer assemblies are excluded by the core packager from its
     canonical list (ADR-0019 / 0026 / 0036).
 
@@ -17,10 +17,10 @@ param(
 $ErrorActionPreference = 'Stop'
 $here = $PSScriptRoot
 $name = 'hosihikari-csharp'
-$entry = 'Hosihikari.PluginProvider.CSharp.dll'
+$entry = 'Hosihikari.PluginLoader.CSharp.dll'
 
-& dotnet build (Join-Path $here 'src/Hosihikari.PluginProvider.CSharp.csproj') -c Release --nologo
-if ($LASTEXITCODE -ne 0) { throw 'the C# provider failed to build' }
+& dotnet build (Join-Path $here 'src/Hosihikari.PluginLoader.CSharp.csproj') -c Release --nologo
+if ($LASTEXITCODE -ne 0) { throw 'the C# loader failed to build' }
 
 $output = Join-Path $here 'src/bin/Release/net10.0'
 $root = if ([System.IO.Path]::IsPathRooted($OutputRoot)) { $OutputRoot } else { Join-Path $here $OutputRoot }
@@ -46,10 +46,10 @@ try {
         type         = 'hosihikari'
         version      = $Version
         dependencies = @(@{ name = 'hosihikari' })
-        extraInfo    = [ordered]@{ api = '2'; format_version = '1'; provider = 'assembly' }
+        extraInfo    = [ordered]@{ api_version = '2'; manifest_version = '1'; loader = 'assembly' }
     } | ConvertTo-Json -Depth 6 | Set-Content $manifest -Encoding UTF8
 
-    & dotnet run --project $packTool -c Release -- pack-provider $output $manifest $root
+    & dotnet run --project $packTool -c Release -- pack-loader $output $manifest $root
     if ($LASTEXITCODE -ne 0) { throw 'the core packager failed' }
 } finally {
     Remove-Item $manifest -Force -ErrorAction SilentlyContinue

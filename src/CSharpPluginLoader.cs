@@ -10,10 +10,10 @@ using Microsoft.CodeAnalysis.CSharp;
 using Microsoft.CodeAnalysis.Emit;
 using Microsoft.Extensions.Logging;
 
-namespace Hosihikari.PluginProvider.CSharp;
+namespace Hosihikari.PluginLoader.CSharp;
 
 /// <summary>
-/// C# 型插件（ADR-0002 的 Provider 扩展点）。
+/// C# 型插件的加载器（ADR-0002 的扩展点）。
 ///
 /// 与 F# 那条同形：C# 直接跑在 CLR 上，所以这里**装载时编译** —— Roslyn 把 <c>.cs</c> 编成
 /// 程序集，再交给一个 collectible ALC，拿到与其他程序集插件一样的隔离与卸载承诺。
@@ -23,7 +23,7 @@ namespace Hosihikari.PluginProvider.CSharp;
 ///
 /// 入口靠约定：编出来的程序集里那个实现 <see cref="IPlugin"/>、有无参构造的类型（ADR-0008）。
 /// </summary>
-public sealed class CSharpPluginProvider : IPluginProvider
+public sealed class CSharpPluginLoader : IPluginLoader
 {
     /// <summary>
     /// 框架自己的装载上下文。组件托管给核心的是一个**隔离**的 ALC，契约与它的抽象包都在里面 ——
@@ -35,16 +35,16 @@ public sealed class CSharpPluginProvider : IPluginProvider
     /// <summary>产物校验和的落地名：内容寻址管"该不该编"，它管"编出来的还是不是那个"。</summary>
     private const string ChecksumSuffix = ".xxh128";
 
-    public string Type => "csharp";
+    public string Id => "csharp";
 
-    public bool CanLoad(PluginManifest manifest) => manifest.Provider == Type;
+    public bool CanLoad(PluginManifest manifest) => manifest.Loader == Id;
 
-    public PluginInstance? Load(PluginManifest manifest, string packageDirectory, IPluginContext context)
+    public PluginHandle? Load(PluginManifest manifest, string packageDirectory, IPluginContext context)
     {
-        var entry = Path.Combine(packageDirectory, manifest.Entry);
+        var entry = Path.Combine(packageDirectory, manifest.EntryPath);
         if (!File.Exists(entry))
         {
-            context.Logger.LogError("清单 entry 指向的 {Entry} 不存在", manifest.Entry);
+            context.Logger.LogError("清单 entry 指向的 {Entry} 不存在", manifest.EntryPath);
             return null;
         }
 
@@ -142,7 +142,7 @@ public sealed class CSharpPluginProvider : IPluginProvider
                 return null;
             }
 
-            return new CompiledPluginInstance(plugin, loadContext);
+            return new CompiledPluginHandle(plugin, loadContext);
         }
         catch (Exception ex)
         {
@@ -358,7 +358,7 @@ public sealed class CSharpPluginProvider : IPluginProvider
 
         hasher.Append(Encoding.UTF8.GetBytes(typeof(CSharpCompilation).Assembly.GetName().Version?.ToString() ?? "?"));
         hasher.Append(Encoding.UTF8.GetBytes(typeof(IPlugin).Assembly.GetName().Version?.ToString() ?? "?"));
-        hasher.Append(Encoding.UTF8.GetBytes(typeof(CSharpPluginProvider).Assembly.GetName().Version?.ToString() ?? "?"));
+        hasher.Append(Encoding.UTF8.GetBytes(typeof(CSharpPluginLoader).Assembly.GetName().Version?.ToString() ?? "?"));
         hasher.Append(Encoding.UTF8.GetBytes(System.Runtime.InteropServices.RuntimeInformation.RuntimeIdentifier));
         hasher.Append(Encoding.UTF8.GetBytes(Environment.Version.ToString()));
 
@@ -772,16 +772,44 @@ public sealed class CSharpPluginProvider : IPluginProvider
     }
 }
 
-internal sealed class CompiledPluginInstance(IPlugin plugin, AssemblyLoadContext loadContext) : PluginInstance(plugin)
+internal sealed class CompiledPluginHandle(IPlugin plugin, AssemblyLoadContext loadContext) : PluginHandle(plugin)
 {
+    private WeakReference? _weakContext;
     private AssemblyLoadContext? _loadContext = loadContext;
 
+    public override bool IsUnloaded => _weakContext is { IsAlive: false };
+
     /// <summary>编出来的程序集就是搬运单元（ADR-0010）：放下它，回收照常验证（ADR-0023）。</summary>
-    public override Func<bool> Release()
+    public override void Unload()
     {
-        var contextUnderTest = new WeakReference(_loadContext!);
-        _loadContext!.Unload();
+        if (_loadContext is null)
+        {
+            return;
+        }
+
+        _weakContext = new WeakReference(_loadContext);
+        _loadContext.Unload();
         _loadContext = null;
-        return () => !contextUnderTest.IsAlive;
+        Plugin = null;
+    }
+
+    public override async Task<bool> WaitForUnloadAsync(CancellationToken cancellationToken = default)
+    {
+        if (_weakContext is null)
+        {
+            return false;
+        }
+
+        for (var i = 0; i < 100 && _weakContext.IsAlive; i++)
+        {
+            GC.Collect();
+            GC.WaitForPendingFinalizers();
+            if (_weakContext.IsAlive)
+            {
+                await Task.Delay(10, cancellationToken).ConfigureAwait(false);
+            }
+        }
+
+        return !_weakContext.IsAlive;
     }
 }

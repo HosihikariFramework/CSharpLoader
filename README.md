@@ -1,24 +1,24 @@
-# Hosihikari.PluginProvider.CSharp
+# Hosihikari.PluginLoader.CSharp
 
 [English](README.md) | [简体中文](README.zh_hans.md)
 
-The **C# plugin Provider** of the Hosihikari framework. Like F#, C# runs on the CLR, so this
-provider **compiles at load time**: Roslyn turns a `.cs` file into a real assembly, which then goes
+The **C# plugin loader** of the Hosihikari framework. Like F#, C# runs on the CLR, so this
+loader **compiles at load time**: Roslyn turns a `.cs` file into a real assembly, which then goes
 into its own collectible ALC.
 
 That buys C# plugins the same promises as any assembly plugin: per-plugin dependency isolation, and an
-unload that is verified rather than assumed. This is a first-class provider: it AOT-compiles source
-to IL before the plugin runs, and the provider loads that IL into a collectible ALC.
+unload that is verified rather than assumed. This is an in-process loader: it compiles source
+to IL before the plugin runs, and the loader loads that IL into a collectible ALC.
 
-**In-process .NET.** The framework keeps the assembly provider, this C# provider and the F# provider
-in-process. Other languages go through the generic out-of-process provider
-(`Hosihikari.PluginProvider.Rpc`, ADR-0031).
+**In-process .NET.** The framework keeps the assembly loader, this C# loader and the F# loader
+in-process. Other languages go through the generic out-of-process loader
+(`Hosihikari.PluginLoader.Rpc`, ADR-0031).
 
 ## Templates
 
 Start from [CSharpPluginTemplate](https://github.com/HosihikariFramework/CSharpPluginTemplate): copy
 it into `plugins/`, rename the plugin, and restart. For a precompiled assembly, use the
-[`dotnet new` template](https://www.nuget.org/packages/Hosihikari.Plugin.Template).
+[`dotnet new` template](https://www.nuget.org/packages/Hosihikari.Plugin.Templates).
 
 ## What a plugin package looks like
 
@@ -34,14 +34,14 @@ plugins/Hello/
         { "name": "hosihikari" },
         { "name": "hosihikari-csharp" }
       ],
-      "extraInfo": { "api": "2", "format_version": "1", "provider": "csharp" }
+      "extraInfo": { "api_version": "2", "manifest_version": "1", "loader": "csharp" }
     }
   main.cs
   Hello.conf          ← the author's defaults, shipped with the package
 ```
 
 The file defines a type implementing `IPlugin` with a parameterless constructor; finding it is the
-provider's job.
+loader's job.
 
 ```csharp
 using System.IO;
@@ -74,7 +74,7 @@ plugin does — including the type-keyed channels.
 ## File-based app directives
 
 `main.cs` may start with `#:package Id@Version` and `#:include path.cs`, matching .NET file-based
-apps. The provider strips them before Roslyn compiles. The packer restores packages at pack time
+apps. The loader strips them before Roslyn compiles. The packer restores packages at pack time
 into the plugin package and copies included files; the server stays offline. `#:include` supports
 `*`, `**`, and `?` globs. `#:project`, `#:property`, `#:sdk`, and top-level statements are not
 supported.
@@ -101,12 +101,13 @@ are trusted (ADR-0011).
 ## Running it
 
 ```
-dotnet run --project host/Hosihikari.PluginProvider.CSharp.Host.csproj -c Release
+dotnet run --project host/Hosihikari.PluginLoader.CSharp.Host.csproj -c Release
 ```
 
-The harness drives this Provider through the core's real `PluginManagerHost`, so sibling
-`Hosihikari.PluginManager`, `Hosihikari.Abstractions` and McMaster fork checkouts are required. It
-checks these things: the Provider is registered by a plugin package, the artifact lands in a
+The harness drives this loader through the real `PluginManager`, so sibling
+`Hosihikari.PluginManager`, the contract checkout (package `Hosihikari.Plugin.Abstractions`) and the
+McMaster fork checkouts are required. It
+checks these things: the loader is registered by a plugin package, the artifact lands in a
 content-addressed directory with its checksum and PDB, the source is compiled at load and reads the
 operator's override, enable hooks reach it, a channel message from the host reaches it, a
 package-local third-party dependency is usable, native libraries resolve from the RID directory,
@@ -116,10 +117,10 @@ referencing it from the host, so the dependency check also covers a genuinely pr
 
 ## How it reaches the host process
 
-As a plugin package, named `hosihikari-csharp` — the same way as the other in-process providers. Source packages
-declare the dependency, and the dependency graph orders the provider first.
+As a plugin package, named `hosihikari-csharp` — the same way as the other in-process loaders. Source packages
+declare the dependency, and the dependency graph orders the loader first.
 
-**Registration cannot be undone**: the types this provider hands out live in its load context.
+**Registration cannot be undone**: the types this loader hands out live in its load context.
 
 ## Packaging
 
@@ -127,7 +128,7 @@ declare the dependency, and the dependency graph orders the provider first.
 pwsh ./pack.ps1 -Version 0.2.3 -OutputRoot artifacts
 ```
 
-It assembles the provider DLL, its private dependencies and the manifest into
+It assembles the loader DLL, its private dependencies and the manifest into
 `hosihikari-csharp/`; the shared layer is not copied. Pushing a `v*` tag attaches the zip to the
 GitHub release (ADR-0036).
 
