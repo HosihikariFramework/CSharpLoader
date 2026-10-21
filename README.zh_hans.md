@@ -107,7 +107,7 @@ dotnet run --project host/Hosihikari.PluginProvider.CSharp.Host.csproj -c Releas
 ## 打包
 
 ```
-pwsh ./pack.ps1 -Version 0.2.2 -OutputRoot artifacts
+pwsh ./pack.ps1 -Version 0.2.3 -OutputRoot artifacts
 ```
 
 它把 Provider DLL、私有依赖与清单装进 `hosihikari-csharp/`，共享层不随包走；打 `v*` 标签时 CI 把 zip 附到 release（ADR-0036）。
