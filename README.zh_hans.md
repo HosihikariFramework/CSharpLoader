@@ -75,9 +75,9 @@ public sealed class HelloPlugin : IPlugin
 
 ## 它怎么编译
 
-用 Roslyn 的 `CSharpCompilation`（`Microsoft.CodeAnalysis.CSharp`）。引用 = 宿主的运行时，加上
-**框架自己那个装载上下文**里的程序集 —— 宿主被装在一个隔离的 ALC 里，契约与它的抽象包不在默认上下文。
-包根目录内的私有 DLL 也参与编译引用，运行时从包目录解析；共享框架程序集仍保持原来的类型身份。
+用 Roslyn 的 `CSharpCompilation`（`Microsoft.CodeAnalysis.CSharp`）。引用的优先级与运行期一致：
+**框架自己那个装载上下文**里已加载的程序集（契约与它的抽象包）、包根目录内的私有 DLL、最后才是宿主的 TPA。
+宿主与包带同名依赖的不同版本时，编译与运行会选同一份；共享框架程序集仍保持原来的类型身份。
 解析源码时要给编码，否则 Roslyn 拒绝发调试信息（CS8055）。
 
 产物按内容寻址缓存（ADR-0029）：`<数据目录>/bin/<哈希>/<名字>.dll`，哈希覆盖源码内容、Roslyn 版本与

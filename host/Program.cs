@@ -326,6 +326,59 @@ checks.Add(("带引号的 #:include 与 ../ 通配符可用",
     $"loaded={quotedLoaded} quoted={quotedText}"));
 host.Unload("QuotedInclude");
 
+// 编译与运行必须选同一份私有依赖：TPA 里的新版不能盖过包内旧版。
+var overlapRoot = Path.Combine(pluginsRoot, "OverlapMiss");
+Directory.CreateDirectory(overlapRoot);
+File.WriteAllText(Path.Combine(overlapRoot, "manifest.json"), """
+    {
+      "name": "OverlapMiss",
+      "entry": "main.cs",
+      "type": "hosihikari",
+      "version": "1.0.0",
+      "dependencies": [
+        { "name": "hosihikari" },
+        { "name": "hosihikari-csharp" }
+      ],
+      "extraInfo": { "api": "2", "format_version": "1", "provider": "csharp" }
+    }
+    """);
+File.WriteAllText(Path.Combine(overlapRoot, "main.cs"), """
+    using System.IO;
+    using Hosihikari;
+
+    public sealed class OverlapPlugin : IPlugin
+    {
+        public void OnLoad(IPluginContext context)
+            => File.WriteAllText(Path.Combine(context.DataDirectory, "overlap.txt"), Overlap.Api.NewApi());
+        public PluginHookResult OnEnable() => PluginHookResult.Allow();
+        public PluginHookResult OnDisable() => PluginHookResult.Allow();
+        public void OnUnload() { }
+    }
+    """);
+var overlapV1 = Path.Combine(RepoRoot(), "test", "OverlapV1", "bin", ConfigurationName(), "net10.0", "Overlap.dll");
+var overlapV2 = Path.Combine(RepoRoot(), "test", "OverlapV2", "bin", ConfigurationName(), "net10.0", "Overlap.dll");
+File.Copy(overlapV1, Path.Combine(overlapRoot, "Overlap.dll"));
+var originalTpa = (string?)AppContext.GetData("TRUSTED_PLATFORM_ASSEMBLIES");
+var overlapLoaded = false;
+try
+{
+    AppContext.SetData(
+        "TRUSTED_PLATFORM_ASSEMBLIES",
+        (originalTpa ?? string.Empty) + Path.PathSeparator + overlapV2);
+    overlapLoaded = host.Load(overlapRoot);
+}
+finally
+{
+    AppContext.SetData("TRUSTED_PLATFORM_ASSEMBLIES", originalTpa);
+}
+
+var overlapBin = Path.Combine(dataRoot, "OverlapMiss", "bin");
+var overlapArtifact = Directory.Exists(overlapBin)
+    && Directory.EnumerateFiles(overlapBin, "OverlapMiss.dll", SearchOption.AllDirectories).Any();
+checks.Add(("编译与运行选择同一份私有依赖",
+    !overlapLoaded && !overlapArtifact,
+    $"loaded={overlapLoaded} artifact={overlapArtifact}"));
+
 Console.WriteLine();
 Console.WriteLine("=== 断言 ===");
 foreach (var (name, passed, detail) in checks)

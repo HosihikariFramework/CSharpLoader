@@ -557,23 +557,17 @@ public sealed class CSharpPluginProvider : IPluginProvider
     {
         var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
 
-        var trusted = (string?)AppContext.GetData("TRUSTED_PLATFORM_ASSEMBLIES");
-        foreach (var path in (trusted ?? string.Empty).Split(Path.PathSeparator, StringSplitOptions.RemoveEmptyEntries))
-        {
-            if (seen.Add(Path.GetFileName(path)))
-            {
-                yield return path;
-            }
-        }
-
+        // 与 ScriptLoadContext 的顺序一致：框架 ALC 优先，其次包内，最后父级（TPA）。
+        // 反过来会让编译器选到宿主的新版本，运行时却从包里装载旧版本。
         foreach (var assembly in FrameworkContext?.Assemblies ?? [])
         {
-            if (assembly.IsDynamic || string.IsNullOrEmpty(assembly.Location))
+            var name = assembly.GetName().Name;
+            if (name is null || !seen.Add(name))
             {
                 continue;
             }
 
-            if (seen.Add(Path.GetFileName(assembly.Location)))
+            if (!assembly.IsDynamic && !string.IsNullOrEmpty(assembly.Location))
             {
                 yield return assembly.Location;
             }
@@ -581,7 +575,16 @@ public sealed class CSharpPluginProvider : IPluginProvider
 
         foreach (var path in LocalAssemblies(packageDirectory))
         {
-            if (seen.Add(Path.GetFileName(path)))
+            if (seen.Add(Path.GetFileNameWithoutExtension(path)))
+            {
+                yield return path;
+            }
+        }
+
+        var trusted = (string?)AppContext.GetData("TRUSTED_PLATFORM_ASSEMBLIES");
+        foreach (var path in (trusted ?? string.Empty).Split(Path.PathSeparator, StringSplitOptions.RemoveEmptyEntries))
+        {
+            if (seen.Add(Path.GetFileNameWithoutExtension(path)))
             {
                 yield return path;
             }

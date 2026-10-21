@@ -12,6 +12,8 @@
     <PackageReference Include="Microsoft.Extensions.Logging.Console" Version="10.0.13" />
     <ProjectReference Include="../src/Hosihikari.PluginProvider.CSharp.csproj" />
     <ProjectReference Include="../test/PrivateDependency/PrivateDependency.csproj" ReferenceOutputAssembly="false" />
+    <ProjectReference Include="../test/OverlapV1/OverlapV1.csproj" ReferenceOutputAssembly="false" />
+    <ProjectReference Include="../test/OverlapV2/OverlapV2.csproj" ReferenceOutputAssembly="false" />
     <!-- 验证宿主借核心的 PluginManagerHost；并列 checkout 才有。 -->
     <ProjectReference Include="../../Hosihikari.PluginManager/src/Hosihikari.PluginManager.csproj"
                       Condition="Exists('../../Hosihikari.PluginManager/src/Hosihikari.PluginManager.csproj')" />

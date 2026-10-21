@@ -81,11 +81,12 @@ supported.
 
 ## How it compiles
 
-`CSharpCompilation` from Roslyn (`Microsoft.CodeAnalysis.CSharp`). The references are the host's
-trusted platform assemblies plus the assemblies in the **framework's own load context** — the host is
-loaded into an isolated ALC, so the contract and its abstractions are not in the default context.
-Private DLLs in the plugin package root are also referenced at compile time and resolved from that
-directory at runtime; shared framework assemblies keep their existing identity.
+`CSharpCompilation` from Roslyn (`Microsoft.CodeAnalysis.CSharp`). References follow the same
+priority as the runtime: assemblies already loaded in the **framework's own load context** (the
+contract and its abstractions), private DLLs in the plugin package root, then the host's trusted
+platform assemblies. This keeps compile-time and runtime on the same version when the host and the
+package carry different builds of the same dependency; shared framework assemblies keep their
+existing identity.
 Parsing passes an encoding, without which Roslyn refuses to emit debugging information (CS8055).
 
 The output is cached by content (ADR-0029): `<data directory>/bin/<hash>/<name>.dll`, the hash covering
