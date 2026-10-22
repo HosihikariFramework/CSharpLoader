@@ -24,7 +24,8 @@ The host expects sibling `PluginManager`, `Plugin.Abstractions`, and
 
 ## Invariants
 
-- The package is a plugin package named `hosihikari-csharp`; its manifest routes on
+- The loader package is named `hosihikari-csharp`; it routes on `extraInfo.loader: assembly` with
+  entry `Hosihikari.PluginLoader.CSharp.dll`. Source packages it handles use
   `extraInfo.loader: csharp` and entry `main.cs`.
 - Compile-time references follow the runtime order: framework shared layer, package-local DLLs,
   then trusted platform assemblies.
