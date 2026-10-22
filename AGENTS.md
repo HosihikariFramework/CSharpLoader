@@ -19,19 +19,21 @@ pwsh ./pack.ps1 -Version 1.0.0 -OutputRoot artifacts
 ```
 
 The host expects sibling `PluginManager`, `Plugin.Abstractions`, and
-`Hosihikari.McMaster.NETCore.Plugins` checkouts. `pack.ps1` calls the core packer and needs the same
+`McMaster.NETCore.Plugins` checkouts. `pack.ps1` calls the core packer and needs the same
 `PluginManager` checkout.
 
 ## Invariants
 
 - The loader package is named `hosihikari-csharp`; it routes on `extraInfo.loader: assembly` with
-  entry `Hosihikari.PluginLoader.CSharp.dll`. Source packages it handles use
-  `extraInfo.loader: csharp` and entry `main.cs`.
+  entry `Hosihikari.PluginLoader.CSharp.dll`. Source packages conventionally use
+  `extraInfo.loader: csharp` and entry `main.cs`; the loader follows the manifest's `EntryPath`,
+  so nested or renamed source paths remain valid.
 - Compile-time references follow the runtime order: framework shared layer, package-local DLLs,
   then trusted platform assemblies.
 - Cache keys cover source text, package-local DLLs, Roslyn version, and runtime version. Keep the
   checksum check in sync.
-- A failed load releases its ALC; one package exposes exactly one `IPlugin` type.
+- A failed load releases its ALC. After excluding abstract/interface types and implementations
+  without a public parameterless constructor, a package exposes exactly one `IPlugin` candidate.
 - Public default branches are protected. Work on a branch, open a pull request, and squash merge.
 
 ## Context
