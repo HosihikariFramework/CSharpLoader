@@ -25,8 +25,9 @@ The host expects sibling `PluginManager`, `Plugin.Abstractions`, and
 ## Invariants
 
 - The loader package is named `hosihikari-csharp`; it routes on `extraInfo.loader: assembly` with
-  entry `Hosihikari.PluginLoader.CSharp.dll`. Source packages it handles use
-  `extraInfo.loader: csharp` and entry `main.cs`.
+  entry `Hosihikari.PluginLoader.CSharp.dll`. Source packages conventionally use
+  `extraInfo.loader: csharp` and entry `main.cs`; the loader follows the manifest's `EntryPath`,
+  so nested or renamed source paths remain valid.
 - Compile-time references follow the runtime order: framework shared layer, package-local DLLs,
   then trusted platform assemblies.
 - Cache keys cover source text, package-local DLLs, Roslyn version, and runtime version. Keep the
