@@ -40,4 +40,4 @@ The host expects sibling `PluginManager`, `Plugin.Abstractions`, and
 
 - Design decisions and terminology are kept by maintainers outside the public repositories; ask for
   the relevant decision when changing lifecycle or public API.
-- [C# plugin guide](https://hf.srcz.one/authoring-csharp/).
+- [C# plugin guide](https://hf.srcz.one/develop/authoring-csharp/).
