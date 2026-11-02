@@ -18,7 +18,7 @@ public sealed class LoaderBootstrap : IPlugin
         // 重复登记说明另一个包已经接管 csharp；本包留在场上只会空转。
         if (!context.RegisterLoader(new CSharpPluginLoader()))
         {
-            throw new InvalidOperationException("csharp 这个插件种类已被占用");
+            throw new InvalidOperationException("The 'csharp' loader kind is already registered");
         }
     }
 
