@@ -44,7 +44,7 @@ public sealed class CSharpPluginLoader : IPluginLoader
         var entry = Path.Combine(packageDirectory, manifest.EntryPath);
         if (!File.Exists(entry))
         {
-            context.Logger.LogError("清单 entry 指向的 {Entry} 不存在", manifest.EntryPath);
+            context.Logger.LogError("{Message}", LoaderText.Get("EntryMissing", manifest.EntryPath));
             return null;
         }
 
@@ -70,7 +70,10 @@ public sealed class CSharpPluginLoader : IPluginLoader
                 catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
                 {
                     // 还有 ALC 钉着这份产物时删不掉；不要把坏缓存当成能编译。
-                    context.Logger.LogError(ex, "清不掉损坏的缓存目录 {Directory}", cacheDirectory);
+                    context.Logger.LogError(
+                        ex,
+                        "{Message}",
+                        LoaderText.Get("CacheDeleteFailed", cacheDirectory));
                     return null;
                 }
             }
@@ -90,7 +93,10 @@ public sealed class CSharpPluginLoader : IPluginLoader
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
         {
             // 另一个进程可能刚把旧缓存清掉；重编一次再租。
-            context.Logger.LogWarning(ex, "缓存目录 {Directory} 已不可用，重编", cacheDirectory);
+            context.Logger.LogWarning(
+                ex,
+                "{Message}",
+                LoaderText.Get("CacheUnavailable", cacheDirectory));
             if (!Compile(entry, packageDirectory, cacheDirectory, manifest.Name, context, sources))
             {
                 return null;
@@ -102,7 +108,10 @@ public sealed class CSharpPluginLoader : IPluginLoader
             }
             catch (Exception retry) when (retry is IOException or UnauthorizedAccessException)
             {
-                context.Logger.LogError(retry, "无法租用缓存目录 {Directory}", cacheDirectory);
+                context.Logger.LogError(
+                    retry,
+                    "{Message}",
+                    LoaderText.Get("CacheLeaseFailed", cacheDirectory));
                 return null;
             }
         }
@@ -128,16 +137,17 @@ public sealed class CSharpPluginLoader : IPluginLoader
             if (candidates.Length != 1)
             {
                 context.Logger.LogError(
-                    "{Assembly} 需要恰好一个实现 IPlugin 且有无参构造的类型，实际 {Count} 个",
-                    assemblyPath,
-                    candidates.Length);
+                    "{Message}",
+                    LoaderText.Get("EntryTypeCount", assemblyPath, candidates.Length));
                 loadContext.Unload();
                 return null;
             }
 
             if (Activator.CreateInstance(candidates[0]) is not IPlugin plugin)
             {
-                context.Logger.LogError("造不出 {Type} 的实例", candidates[0].FullName);
+                context.Logger.LogError(
+                    "{Message}",
+                    LoaderText.Get("EntryCreateFailed", candidates[0].FullName));
                 loadContext.Unload();
                 return null;
             }
@@ -146,14 +156,17 @@ public sealed class CSharpPluginLoader : IPluginLoader
         }
         catch (Exception ex)
         {
-            context.Logger.LogError(ex, "装载 {Name} 的产物失败", manifest.Name);
+            context.Logger.LogError(ex, "{Message}", LoaderText.Get("ArtifactLoadFailed", manifest.Name));
             try
             {
                 loadContext.Unload();
             }
             catch (Exception unloadEx)
             {
-                context.Logger.LogWarning(unloadEx, "回收 {Name} 的失败产物时抛出", manifest.Name);
+                context.Logger.LogWarning(
+                    unloadEx,
+                    "{Message}",
+                    LoaderText.Get("ArtifactReclaimFailed", manifest.Name));
             }
 
             return null;
@@ -194,13 +207,13 @@ public sealed class CSharpPluginLoader : IPluginLoader
             }
             catch (Exception ex) when (ex is ArgumentException or NotSupportedException or PathTooLongException)
             {
-                error = $"源码路径无效：{path}";
+                error = LoaderText.Get("SourcePathInvalid", path);
                 return;
             }
 
             if (!full.StartsWith(prefix, comparison))
             {
-                error = $"#:include 出界：{path}";
+                error = LoaderText.Get("IncludeOutside", path);
                 return;
             }
 
@@ -211,7 +224,7 @@ public sealed class CSharpPluginLoader : IPluginLoader
 
             if (!full.EndsWith(".cs", StringComparison.OrdinalIgnoreCase))
             {
-                error = $"#:include 只支持 .cs：{path}";
+                error = LoaderText.Get("IncludeNotCs", path);
                 return;
             }
 
@@ -222,7 +235,7 @@ public sealed class CSharpPluginLoader : IPluginLoader
             }
             catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
             {
-                error = $"读不了源码 {path}：{ex.Message}";
+                error = LoaderText.Get("SourceReadFailed", path, ex.Message);
                 return;
             }
 
@@ -243,7 +256,7 @@ public sealed class CSharpPluginLoader : IPluginLoader
                     var include = trimmed["#:include".Length..].Trim().Trim('"');
                     if (include.Length == 0)
                     {
-                        error = $"{path}: #:include 缺少路径";
+                        error = LoaderText.Get("IncludeMissingPath", path);
                         return;
                     }
 
@@ -253,7 +266,7 @@ public sealed class CSharpPluginLoader : IPluginLoader
                         var matches = ExpandGlob(root, baseDirectory, include);
                         if (matches.Length == 0)
                         {
-                            error = $"{path}: #:include 没有匹配到文件：{include}";
+                            error = LoaderText.Get("IncludeNoMatch", path, include);
                             return;
                         }
 
@@ -465,7 +478,7 @@ public sealed class CSharpPluginLoader : IPluginLoader
         catch (Exception ex)
         {
             // 编译期出错只让这一个插件倒下（ADR-0009）。
-            context.Logger.LogError(ex, "编译 {Script} 失败", scriptPath);
+            context.Logger.LogError(ex, "{Message}", LoaderText.Get("CompileFailed", scriptPath));
             return false;
         }
         finally
