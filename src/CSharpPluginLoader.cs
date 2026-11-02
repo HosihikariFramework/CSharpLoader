@@ -672,7 +672,7 @@ public sealed class CSharpPluginLoader : IPluginLoader
         }
 
         lease.Dispose();
-        throw new DirectoryNotFoundException($"缓存目录不存在：{cacheDirectory}");
+        throw new DirectoryNotFoundException($"Cache directory does not exist: {cacheDirectory}");
     }
 
     private static string LeasePath(string root, string cacheDirectory) =>
