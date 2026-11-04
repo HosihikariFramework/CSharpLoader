@@ -18,7 +18,7 @@ pwsh ./pack.ps1 -Version 1.0.0 -OutputRoot artifacts
 ```
 
 The host expects sibling `PluginManager`, `Plugin.Abstractions`, and
-`McMaster.NETCore.Plugins` checkouts. `pack.ps1` calls the core packer and needs the same
+`DotNetCorePlugins` checkouts. `pack.ps1` calls the core packer and needs the same
 `PluginManager` checkout.
 
 ## Invariants
