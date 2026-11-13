@@ -174,7 +174,7 @@ File.WriteAllText(Path.Combine(broken, "manifest.json"), """
         { "name": "hosihikari" },
         { "name": "hosihikari-csharp" }
       ],
-      "extraInfo": { "api_version": "2", "manifest_version": "1", "loader": "csharp" }
+      "extraInfo": { "api_version": "3", "manifest_version": "1", "loader": "csharp" }
     }
     """);
 File.WriteAllText(Path.Combine(broken, "main.cs"), """
@@ -183,10 +183,12 @@ File.WriteAllText(Path.Combine(broken, "main.cs"), """
     public sealed class BrokenPlugin : IPlugin
     {
         public BrokenPlugin() => throw new System.InvalidOperationException("constructor");
-        public void OnLoad(IPluginContext context) { }
-        public PluginHookResult OnEnable() => PluginHookResult.Allow();
-        public PluginHookResult OnDisable() => PluginHookResult.Allow();
-        public void OnUnload() { }
+        public ValueTask OnLoad(IPluginContext context, System.Threading.CancellationToken cancellationToken) => ValueTask.CompletedTask;
+        public ValueTask<PluginHookResult> OnEnable(System.Threading.CancellationToken cancellationToken) =>
+            ValueTask.FromResult(PluginHookResult.Allow());
+        public ValueTask<PluginHookResult> OnDisable(System.Threading.CancellationToken cancellationToken) =>
+            ValueTask.FromResult(PluginHookResult.Allow());
+        public ValueTask OnUnload(System.Threading.CancellationToken cancellationToken) => ValueTask.CompletedTask;
     }
     """);
 var alcBefore = AssemblyLoadContext.All.Count();
@@ -216,7 +218,7 @@ File.WriteAllText(Path.Combine(nested, "manifest.json"), """
         { "name": "hosihikari" },
         { "name": "hosihikari-csharp" }
       ],
-      "extraInfo": { "api_version": "2", "manifest_version": "1", "loader": "csharp" }
+      "extraInfo": { "api_version": "3", "manifest_version": "1", "loader": "csharp" }
     }
     """);
 File.WriteAllText(Path.Combine(nested, "src", "main.cs"), """
@@ -225,11 +227,16 @@ File.WriteAllText(Path.Combine(nested, "src", "main.cs"), """
 
     public sealed class NestedPlugin : IPlugin
     {
-        public void OnLoad(IPluginContext context)
-            => File.WriteAllText(Path.Combine(context.DataDirectory, "nested.txt"), ProviderPrivateDependency.Marker.Value);
-        public PluginHookResult OnEnable() => PluginHookResult.Allow();
-        public PluginHookResult OnDisable() => PluginHookResult.Allow();
-        public void OnUnload() { }
+        public ValueTask OnLoad(IPluginContext context, System.Threading.CancellationToken cancellationToken)
+        {
+            File.WriteAllText(Path.Combine(context.DataDirectory, "nested.txt"), ProviderPrivateDependency.Marker.Value);
+            return ValueTask.CompletedTask;
+        }
+        public ValueTask<PluginHookResult> OnEnable(System.Threading.CancellationToken cancellationToken) =>
+            ValueTask.FromResult(PluginHookResult.Allow());
+        public ValueTask<PluginHookResult> OnDisable(System.Threading.CancellationToken cancellationToken) =>
+            ValueTask.FromResult(PluginHookResult.Allow());
+        public ValueTask OnUnload(System.Threading.CancellationToken cancellationToken) => ValueTask.CompletedTask;
     }
     """);
 var nestedLoaded = host.Load(nested);
@@ -253,7 +260,7 @@ File.WriteAllText(Path.Combine(include, "manifest.json"), """
         { "name": "hosihikari" },
         { "name": "hosihikari-csharp" }
       ],
-      "extraInfo": { "api_version": "2", "manifest_version": "1", "loader": "csharp" }
+      "extraInfo": { "api_version": "3", "manifest_version": "1", "loader": "csharp" }
     }
     """);
 File.WriteAllText(Path.Combine(include, "parts", "helper.cs"), """
@@ -270,11 +277,16 @@ File.WriteAllText(Path.Combine(include, "main.cs"), """
 
     public sealed class IncludePlugin : IPlugin
     {
-        public void OnLoad(IPluginContext context)
-            => File.WriteAllText(Path.Combine(context.DataDirectory, "include.txt"), IncludeHelper.Value);
-        public PluginHookResult OnEnable() => PluginHookResult.Allow();
-        public PluginHookResult OnDisable() => PluginHookResult.Allow();
-        public void OnUnload() { }
+        public ValueTask OnLoad(IPluginContext context, System.Threading.CancellationToken cancellationToken)
+        {
+            File.WriteAllText(Path.Combine(context.DataDirectory, "include.txt"), IncludeHelper.Value);
+            return ValueTask.CompletedTask;
+        }
+        public ValueTask<PluginHookResult> OnEnable(System.Threading.CancellationToken cancellationToken) =>
+            ValueTask.FromResult(PluginHookResult.Allow());
+        public ValueTask<PluginHookResult> OnDisable(System.Threading.CancellationToken cancellationToken) =>
+            ValueTask.FromResult(PluginHookResult.Allow());
+        public ValueTask OnUnload(System.Threading.CancellationToken cancellationToken) => ValueTask.CompletedTask;
     }
     """);
 var includeLoaded = host.Load(include);
@@ -299,7 +311,7 @@ File.WriteAllText(Path.Combine(quoted, "manifest.json"), """
         { "name": "hosihikari" },
         { "name": "hosihikari-csharp" }
       ],
-      "extraInfo": { "api_version": "2", "manifest_version": "1", "loader": "csharp" }
+      "extraInfo": { "api_version": "3", "manifest_version": "1", "loader": "csharp" }
     }
     """);
 File.WriteAllText(Path.Combine(quoted, "shared", "helper.cs"), """
@@ -315,11 +327,16 @@ File.WriteAllText(Path.Combine(quoted, "src", "main.cs"), """
 
     public sealed class QuotedPlugin : IPlugin
     {
-        public void OnLoad(IPluginContext context)
-            => File.WriteAllText(Path.Combine(context.DataDirectory, "quoted.txt"), QuotedHelper.Value);
-        public PluginHookResult OnEnable() => PluginHookResult.Allow();
-        public PluginHookResult OnDisable() => PluginHookResult.Allow();
-        public void OnUnload() { }
+        public ValueTask OnLoad(IPluginContext context, System.Threading.CancellationToken cancellationToken)
+        {
+            File.WriteAllText(Path.Combine(context.DataDirectory, "quoted.txt"), QuotedHelper.Value);
+            return ValueTask.CompletedTask;
+        }
+        public ValueTask<PluginHookResult> OnEnable(System.Threading.CancellationToken cancellationToken) =>
+            ValueTask.FromResult(PluginHookResult.Allow());
+        public ValueTask<PluginHookResult> OnDisable(System.Threading.CancellationToken cancellationToken) =>
+            ValueTask.FromResult(PluginHookResult.Allow());
+        public ValueTask OnUnload(System.Threading.CancellationToken cancellationToken) => ValueTask.CompletedTask;
     }
     """);
 var quotedLoaded = host.Load(quoted);
@@ -343,7 +360,7 @@ File.WriteAllText(Path.Combine(overlapRoot, "manifest.json"), """
         { "name": "hosihikari" },
         { "name": "hosihikari-csharp" }
       ],
-      "extraInfo": { "api_version": "2", "manifest_version": "1", "loader": "csharp" }
+      "extraInfo": { "api_version": "3", "manifest_version": "1", "loader": "csharp" }
     }
     """);
 File.WriteAllText(Path.Combine(overlapRoot, "main.cs"), """
@@ -352,11 +369,16 @@ File.WriteAllText(Path.Combine(overlapRoot, "main.cs"), """
 
     public sealed class OverlapPlugin : IPlugin
     {
-        public void OnLoad(IPluginContext context)
-            => File.WriteAllText(Path.Combine(context.DataDirectory, "overlap.txt"), Overlap.Api.NewApi());
-        public PluginHookResult OnEnable() => PluginHookResult.Allow();
-        public PluginHookResult OnDisable() => PluginHookResult.Allow();
-        public void OnUnload() { }
+        public ValueTask OnLoad(IPluginContext context, System.Threading.CancellationToken cancellationToken)
+        {
+            File.WriteAllText(Path.Combine(context.DataDirectory, "overlap.txt"), Overlap.Api.NewApi());
+            return ValueTask.CompletedTask;
+        }
+        public ValueTask<PluginHookResult> OnEnable(System.Threading.CancellationToken cancellationToken) =>
+            ValueTask.FromResult(PluginHookResult.Allow());
+        public ValueTask<PluginHookResult> OnDisable(System.Threading.CancellationToken cancellationToken) =>
+            ValueTask.FromResult(PluginHookResult.Allow());
+        public ValueTask OnUnload(System.Threading.CancellationToken cancellationToken) => ValueTask.CompletedTask;
     }
     """);
 var overlapV1 = Path.Combine(RepoRoot(), "test", "OverlapV1", "bin", ConfigurationName(), "net10.0", "Overlap.dll");
@@ -440,7 +462,7 @@ void StageProviderPackage()
           "type": "hosihikari",
           "version": "0.1.0",
           "dependencies": [ { "name": "hosihikari" } ],
-          "extraInfo": { "api_version": "2", "manifest_version": "1", "loader": "assembly" }
+          "extraInfo": { "api_version": "3", "manifest_version": "1", "loader": "assembly" }
         }
         """);
 
@@ -478,7 +500,7 @@ bool StageScriptPackage()
             { "name": "hosihikari" },
             { "name": "hosihikari-csharp" }
           ],
-          "extraInfo": { "api_version": "2", "manifest_version": "1", "loader": "csharp" }
+          "extraInfo": { "api_version": "3", "manifest_version": "1", "loader": "csharp" }
         }
         """);
 
@@ -505,7 +527,7 @@ bool StageScriptPackage()
         {
             private string _data = "";
 
-            public void OnLoad(IPluginContext context)
+            public ValueTask OnLoad(IPluginContext context, System.Threading.CancellationToken cancellationToken)
             {
                 _data = context.DataDirectory;
                 context.Logger.LogInformation("csharp plugin loaded in {Name}", context.Name);
@@ -531,23 +553,30 @@ bool StageScriptPackage()
                         File.WriteAllText(Path.Combine(_data, "ping.txt"), "ping:" + message.Json);
                     }
                 });
+
+                return ValueTask.CompletedTask;
             }
 
             [DllImport("hosihikari_probe", EntryPoint = "hosihikari_probe")]
             private static extern int NativeProbe();
 
-            public PluginHookResult OnEnable()
+            public ValueTask<PluginHookResult> OnEnable(System.Threading.CancellationToken cancellationToken)
             {
                 File.WriteAllText(Path.Combine(_data, "enabled.txt"), "enabled");
-                return PluginHookResult.Allow();
+                return ValueTask.FromResult(PluginHookResult.Allow());
             }
 
-            public PluginHookResult OnDisable()
+            public ValueTask<PluginHookResult> OnDisable(System.Threading.CancellationToken cancellationToken)
             {
                 File.WriteAllText(Path.Combine(_data, "disabled.txt"), "disabled");
-                return PluginHookResult.Allow();
+                return ValueTask.FromResult(PluginHookResult.Allow());
             }
-            public void OnUnload() => File.WriteAllText(Path.Combine(_data, "unloaded.txt"), "unloaded");
+
+            public ValueTask OnUnload(System.Threading.CancellationToken cancellationToken)
+            {
+                File.WriteAllText(Path.Combine(_data, "unloaded.txt"), "unloaded");
+                return ValueTask.CompletedTask;
+            }
         }
         """);
 

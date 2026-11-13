@@ -34,7 +34,7 @@ plugins/Hello/
         { "name": "hosihikari" },
         { "name": "hosihikari-csharp" }
       ],
-      "extraInfo": { "api_version": "2", "manifest_version": "1", "loader": "csharp" }
+      "extraInfo": { "api_version": "3", "manifest_version": "1", "loader": "csharp" }
     }
   main.cs
   Hello.conf          ← the author's defaults, shipped with the package

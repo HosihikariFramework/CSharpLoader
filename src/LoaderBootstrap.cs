@@ -13,20 +13,23 @@ namespace Hosihikari.PluginLoader.CSharp;
 /// </summary>
 public sealed class LoaderBootstrap : IPlugin
 {
-    public void OnLoad(IPluginContext context)
+    public ValueTask OnLoad(IPluginContext context, CancellationToken cancellationToken)
     {
         // 重复登记说明另一个包已经接管 csharp；本包留在场上只会空转。
-        if (!context.RegisterLoader(new CSharpPluginLoader()))
+        // 加载器包拿到的是 ILoaderContext（ADR-0059），插件面之外才看得见 RegisterLoader。
+        if (!((ILoaderContext)context).RegisterLoader(new CSharpPluginLoader()))
         {
             throw new InvalidOperationException("The 'csharp' loader kind is already registered");
         }
+
+        return ValueTask.CompletedTask;
     }
 
-    public PluginHookResult OnEnable() => PluginHookResult.Allow();
+    public ValueTask<PluginHookResult> OnEnable(CancellationToken cancellationToken) =>
+        ValueTask.FromResult(PluginHookResult.Allow());
 
-    public PluginHookResult OnDisable() => PluginHookResult.Allow();
+    public ValueTask<PluginHookResult> OnDisable(CancellationToken cancellationToken) =>
+        ValueTask.FromResult(PluginHookResult.Allow());
 
-    public void OnUnload()
-    {
-    }
+    public ValueTask OnUnload(CancellationToken cancellationToken) => ValueTask.CompletedTask;
 }
