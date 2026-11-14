@@ -1,4 +1,4 @@
-using System.Globalization;
+﻿using System.Globalization;
 using System.Runtime.Loader;
 using Hosihikari;
 using Hosihikari.PluginLoader.CSharp;
@@ -164,17 +164,17 @@ host.Unload("Hello");
 // 构造函数抛出时，加载器必须回收 ALC 并交回 null；否则每次重试都泄漏一个 ALC。
 var broken = Path.Combine(pluginsRoot, "Broken");
 Directory.CreateDirectory(broken);
-File.WriteAllText(Path.Combine(broken, "manifest.json"), """
+File.WriteAllText(Path.Combine(broken, "hosihikari.json"), """
     {
       "name": "Broken",
       "entry": "main.cs",
-      "type": "hosihikari",
+      "schemaVersion": 1, "kind": "plugin", "apiVersion": 3,
       "version": "1.0.0",
       "dependencies": [
         { "name": "hosihikari" },
         { "name": "hosihikari-csharp" }
       ],
-      "extraInfo": { "api_version": "3", "manifest_version": "1", "loader": "csharp" }
+      "loader": "csharp"
     }
     """);
 File.WriteAllText(Path.Combine(broken, "main.cs"), """
@@ -208,17 +208,17 @@ Directory.CreateDirectory(Path.Combine(nested, "src"));
 File.Copy(
     Path.Combine(RepoRoot(), "test", "PrivateDependency", "bin", ConfigurationName(), "net10.0", "Hosihikari.CSharp.PrivateDependency.dll"),
     Path.Combine(nested, "Hosihikari.CSharp.PrivateDependency.dll"));
-File.WriteAllText(Path.Combine(nested, "manifest.json"), """
+File.WriteAllText(Path.Combine(nested, "hosihikari.json"), """
     {
       "name": "Nested",
       "entry": "src/main.cs",
-      "type": "hosihikari",
+      "schemaVersion": 1, "kind": "plugin", "apiVersion": 3,
       "version": "1.0.0",
       "dependencies": [
         { "name": "hosihikari" },
         { "name": "hosihikari-csharp" }
       ],
-      "extraInfo": { "api_version": "3", "manifest_version": "1", "loader": "csharp" }
+      "loader": "csharp"
     }
     """);
 File.WriteAllText(Path.Combine(nested, "src", "main.cs"), """
@@ -250,17 +250,17 @@ host.Unload("Nested");
 // 装载期只把指令行换成空行。
 var include = Path.Combine(pluginsRoot, "Include");
 Directory.CreateDirectory(Path.Combine(include, "parts"));
-File.WriteAllText(Path.Combine(include, "manifest.json"), """
+File.WriteAllText(Path.Combine(include, "hosihikari.json"), """
     {
       "name": "Include",
       "entry": "main.cs",
-      "type": "hosihikari",
+      "schemaVersion": 1, "kind": "plugin", "apiVersion": 3,
       "version": "1.0.0",
       "dependencies": [
         { "name": "hosihikari" },
         { "name": "hosihikari-csharp" }
       ],
-      "extraInfo": { "api_version": "3", "manifest_version": "1", "loader": "csharp" }
+      "loader": "csharp"
     }
     """);
 File.WriteAllText(Path.Combine(include, "parts", "helper.cs"), """
@@ -301,17 +301,17 @@ host.Unload("Include");
 var quoted = Path.Combine(pluginsRoot, "QuotedInclude");
 Directory.CreateDirectory(Path.Combine(quoted, "src"));
 Directory.CreateDirectory(Path.Combine(quoted, "shared"));
-File.WriteAllText(Path.Combine(quoted, "manifest.json"), """
+File.WriteAllText(Path.Combine(quoted, "hosihikari.json"), """
     {
       "name": "QuotedInclude",
       "entry": "src/main.cs",
-      "type": "hosihikari",
+      "schemaVersion": 1, "kind": "plugin", "apiVersion": 3,
       "version": "1.0.0",
       "dependencies": [
         { "name": "hosihikari" },
         { "name": "hosihikari-csharp" }
       ],
-      "extraInfo": { "api_version": "3", "manifest_version": "1", "loader": "csharp" }
+      "loader": "csharp"
     }
     """);
 File.WriteAllText(Path.Combine(quoted, "shared", "helper.cs"), """
@@ -350,17 +350,17 @@ host.Unload("QuotedInclude");
 // 编译与运行必须选同一份私有依赖：TPA 里的新版不能盖过包内旧版。
 var overlapRoot = Path.Combine(pluginsRoot, "OverlapMiss");
 Directory.CreateDirectory(overlapRoot);
-File.WriteAllText(Path.Combine(overlapRoot, "manifest.json"), """
+File.WriteAllText(Path.Combine(overlapRoot, "hosihikari.json"), """
     {
       "name": "OverlapMiss",
       "entry": "main.cs",
-      "type": "hosihikari",
+      "schemaVersion": 1, "kind": "plugin", "apiVersion": 3,
       "version": "1.0.0",
       "dependencies": [
         { "name": "hosihikari" },
         { "name": "hosihikari-csharp" }
       ],
-      "extraInfo": { "api_version": "3", "manifest_version": "1", "loader": "csharp" }
+      "loader": "csharp"
     }
     """);
 File.WriteAllText(Path.Combine(overlapRoot, "main.cs"), """
@@ -455,14 +455,14 @@ void StageProviderPackage()
     var package = Path.Combine(pluginsRoot, "hosihikari-csharp");
     Directory.CreateDirectory(package);
 
-    File.WriteAllText(Path.Combine(package, "manifest.json"), """
+    File.WriteAllText(Path.Combine(package, "hosihikari.json"), """
         {
           "name": "hosihikari-csharp",
           "entry": "Hosihikari.PluginLoader.CSharp.dll",
-          "type": "hosihikari",
+          "schemaVersion": 1, "kind": "plugin", "apiVersion": 3,
           "version": "0.1.0",
           "dependencies": [ { "name": "hosihikari" } ],
-          "extraInfo": { "api_version": "3", "manifest_version": "1", "loader": "assembly" }
+          "loader": "assembly"
         }
         """);
 
@@ -490,17 +490,17 @@ bool StageScriptPackage()
     var package = Path.Combine(pluginsRoot, "Hello");
     Directory.CreateDirectory(package);
 
-    File.WriteAllText(Path.Combine(package, "manifest.json"), """
+    File.WriteAllText(Path.Combine(package, "hosihikari.json"), """
         {
           "name": "Hello",
           "entry": "main.cs",
-          "type": "hosihikari",
+          "schemaVersion": 1, "kind": "plugin", "apiVersion": 3,
           "version": "1.0.0",
           "dependencies": [
             { "name": "hosihikari" },
             { "name": "hosihikari-csharp" }
           ],
-          "extraInfo": { "api_version": "3", "manifest_version": "1", "loader": "csharp" }
+          "loader": "csharp"
         }
         """);
 
