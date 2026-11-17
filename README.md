@@ -47,26 +47,31 @@ loader's job.
 
 ```csharp
 using System.IO;
+using System.Threading;
+using System.Threading.Tasks;
 using Hosihikari;
 
 public sealed class HelloPlugin : IPlugin
 {
     private string _data = "";
 
-    public void OnLoad(IPluginContext context)
+    public ValueTask OnLoad(IPluginContext context, CancellationToken token)
     {
         _data = context.DataDirectory;
         File.WriteAllText(Path.Combine(_data, "body.txt"), "body:" + context.Configuration["greeting"]);
+        return ValueTask.CompletedTask;
     }
 
-    public PluginHookResult OnEnable()
+    public ValueTask<PluginHookResult> OnEnable(CancellationToken token)
     {
         File.WriteAllText(Path.Combine(_data, "enabled.txt"), "enabled");
-        return PluginHookResult.Allow();
+        return ValueTask.FromResult(PluginHookResult.Allow());
     }
 
-    public PluginHookResult OnDisable() => PluginHookResult.Allow();
-    public void OnUnload() { }
+    public ValueTask<PluginHookResult> OnDisable(CancellationToken token) =>
+        ValueTask.FromResult(PluginHookResult.Allow());
+
+    public ValueTask OnUnload(CancellationToken token) => ValueTask.CompletedTask;
 }
 ```
 
