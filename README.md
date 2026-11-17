@@ -24,17 +24,19 @@ it into `plugins/`, rename the plugin, and restart. For a precompiled assembly, 
 
 ```
 plugins/Hello/
-  manifest.json
+  hosihikari.json
     {
+      "schemaVersion": 1,
       "name": "Hello",
-      "entry": "main.cs",
-      "type": "hosihikari",
       "version": "1.0.0",
+      "entry": "main.cs",
+      "loader": "csharp",
+      "kind": "plugin",
+      "apiVersion": 3,
       "dependencies": [
         { "name": "hosihikari" },
         { "name": "hosihikari-csharp" }
-      ],
-      "extraInfo": { "api_version": "2", "manifest_version": "1", "loader": "csharp" }
+      ]
     }
   main.cs
   Hello.conf          ← the author's defaults, shipped with the package
@@ -45,26 +47,31 @@ loader's job.
 
 ```csharp
 using System.IO;
+using System.Threading;
+using System.Threading.Tasks;
 using Hosihikari;
 
 public sealed class HelloPlugin : IPlugin
 {
     private string _data = "";
 
-    public void OnLoad(IPluginContext context)
+    public ValueTask OnLoad(IPluginContext context, CancellationToken token)
     {
         _data = context.DataDirectory;
         File.WriteAllText(Path.Combine(_data, "body.txt"), "body:" + context.Configuration["greeting"]);
+        return ValueTask.CompletedTask;
     }
 
-    public PluginHookResult OnEnable()
+    public ValueTask<PluginHookResult> OnEnable(CancellationToken token)
     {
         File.WriteAllText(Path.Combine(_data, "enabled.txt"), "enabled");
-        return PluginHookResult.Allow();
+        return ValueTask.FromResult(PluginHookResult.Allow());
     }
 
-    public PluginHookResult OnDisable() => PluginHookResult.Allow();
-    public void OnUnload() { }
+    public ValueTask<PluginHookResult> OnDisable(CancellationToken token) =>
+        ValueTask.FromResult(PluginHookResult.Allow());
+
+    public ValueTask OnUnload(CancellationToken token) => ValueTask.CompletedTask;
 }
 ```
 
@@ -128,8 +135,9 @@ declare the dependency, and the dependency graph orders the loader first.
 pwsh ./pack.ps1 -Version 1.0.0 -OutputRoot artifacts
 ```
 
-It assembles the loader DLL, its private dependencies and the manifest into
-`plugins/hosihikari-csharp/`; the shared layer is not copied. Pushing a `v*` tag attaches the zip
+It assembles the loader DLL, its private dependencies and `hosihikari.json` into
+`plugins/hosihikari-csharp/`; the packer generates the LeviLamina `manifest.json` envelope from it
+(ADR-0058), and the shared layer is not copied. Pushing a `v*` tag attaches the zip
 to the GitHub release (ADR-0044).
 
 The script invokes the core packager (`PluginManager/tools/Pack`), which owns the

@@ -1,4 +1,4 @@
-using System.Globalization;
+﻿using System.Globalization;
 using System.Runtime.Loader;
 using Hosihikari;
 using Hosihikari.PluginLoader.CSharp;
@@ -164,17 +164,17 @@ host.Unload("Hello");
 // 构造函数抛出时，加载器必须回收 ALC 并交回 null；否则每次重试都泄漏一个 ALC。
 var broken = Path.Combine(pluginsRoot, "Broken");
 Directory.CreateDirectory(broken);
-File.WriteAllText(Path.Combine(broken, "manifest.json"), """
+File.WriteAllText(Path.Combine(broken, "hosihikari.json"), """
     {
       "name": "Broken",
       "entry": "main.cs",
-      "type": "hosihikari",
+      "schemaVersion": 1, "kind": "plugin", "apiVersion": 3,
       "version": "1.0.0",
       "dependencies": [
         { "name": "hosihikari" },
         { "name": "hosihikari-csharp" }
       ],
-      "extraInfo": { "api_version": "2", "manifest_version": "1", "loader": "csharp" }
+      "loader": "csharp"
     }
     """);
 File.WriteAllText(Path.Combine(broken, "main.cs"), """
@@ -183,10 +183,12 @@ File.WriteAllText(Path.Combine(broken, "main.cs"), """
     public sealed class BrokenPlugin : IPlugin
     {
         public BrokenPlugin() => throw new System.InvalidOperationException("constructor");
-        public void OnLoad(IPluginContext context) { }
-        public PluginHookResult OnEnable() => PluginHookResult.Allow();
-        public PluginHookResult OnDisable() => PluginHookResult.Allow();
-        public void OnUnload() { }
+        public ValueTask OnLoad(IPluginContext context, System.Threading.CancellationToken cancellationToken) => ValueTask.CompletedTask;
+        public ValueTask<PluginHookResult> OnEnable(System.Threading.CancellationToken cancellationToken) =>
+            ValueTask.FromResult(PluginHookResult.Allow());
+        public ValueTask<PluginHookResult> OnDisable(System.Threading.CancellationToken cancellationToken) =>
+            ValueTask.FromResult(PluginHookResult.Allow());
+        public ValueTask OnUnload(System.Threading.CancellationToken cancellationToken) => ValueTask.CompletedTask;
     }
     """);
 var alcBefore = AssemblyLoadContext.All.Count();
@@ -206,17 +208,17 @@ Directory.CreateDirectory(Path.Combine(nested, "src"));
 File.Copy(
     Path.Combine(RepoRoot(), "test", "PrivateDependency", "bin", ConfigurationName(), "net10.0", "Hosihikari.CSharp.PrivateDependency.dll"),
     Path.Combine(nested, "Hosihikari.CSharp.PrivateDependency.dll"));
-File.WriteAllText(Path.Combine(nested, "manifest.json"), """
+File.WriteAllText(Path.Combine(nested, "hosihikari.json"), """
     {
       "name": "Nested",
       "entry": "src/main.cs",
-      "type": "hosihikari",
+      "schemaVersion": 1, "kind": "plugin", "apiVersion": 3,
       "version": "1.0.0",
       "dependencies": [
         { "name": "hosihikari" },
         { "name": "hosihikari-csharp" }
       ],
-      "extraInfo": { "api_version": "2", "manifest_version": "1", "loader": "csharp" }
+      "loader": "csharp"
     }
     """);
 File.WriteAllText(Path.Combine(nested, "src", "main.cs"), """
@@ -225,11 +227,16 @@ File.WriteAllText(Path.Combine(nested, "src", "main.cs"), """
 
     public sealed class NestedPlugin : IPlugin
     {
-        public void OnLoad(IPluginContext context)
-            => File.WriteAllText(Path.Combine(context.DataDirectory, "nested.txt"), ProviderPrivateDependency.Marker.Value);
-        public PluginHookResult OnEnable() => PluginHookResult.Allow();
-        public PluginHookResult OnDisable() => PluginHookResult.Allow();
-        public void OnUnload() { }
+        public ValueTask OnLoad(IPluginContext context, System.Threading.CancellationToken cancellationToken)
+        {
+            File.WriteAllText(Path.Combine(context.DataDirectory, "nested.txt"), ProviderPrivateDependency.Marker.Value);
+            return ValueTask.CompletedTask;
+        }
+        public ValueTask<PluginHookResult> OnEnable(System.Threading.CancellationToken cancellationToken) =>
+            ValueTask.FromResult(PluginHookResult.Allow());
+        public ValueTask<PluginHookResult> OnDisable(System.Threading.CancellationToken cancellationToken) =>
+            ValueTask.FromResult(PluginHookResult.Allow());
+        public ValueTask OnUnload(System.Threading.CancellationToken cancellationToken) => ValueTask.CompletedTask;
     }
     """);
 var nestedLoaded = host.Load(nested);
@@ -243,17 +250,17 @@ host.Unload("Nested");
 // 装载期只把指令行换成空行。
 var include = Path.Combine(pluginsRoot, "Include");
 Directory.CreateDirectory(Path.Combine(include, "parts"));
-File.WriteAllText(Path.Combine(include, "manifest.json"), """
+File.WriteAllText(Path.Combine(include, "hosihikari.json"), """
     {
       "name": "Include",
       "entry": "main.cs",
-      "type": "hosihikari",
+      "schemaVersion": 1, "kind": "plugin", "apiVersion": 3,
       "version": "1.0.0",
       "dependencies": [
         { "name": "hosihikari" },
         { "name": "hosihikari-csharp" }
       ],
-      "extraInfo": { "api_version": "2", "manifest_version": "1", "loader": "csharp" }
+      "loader": "csharp"
     }
     """);
 File.WriteAllText(Path.Combine(include, "parts", "helper.cs"), """
@@ -270,11 +277,16 @@ File.WriteAllText(Path.Combine(include, "main.cs"), """
 
     public sealed class IncludePlugin : IPlugin
     {
-        public void OnLoad(IPluginContext context)
-            => File.WriteAllText(Path.Combine(context.DataDirectory, "include.txt"), IncludeHelper.Value);
-        public PluginHookResult OnEnable() => PluginHookResult.Allow();
-        public PluginHookResult OnDisable() => PluginHookResult.Allow();
-        public void OnUnload() { }
+        public ValueTask OnLoad(IPluginContext context, System.Threading.CancellationToken cancellationToken)
+        {
+            File.WriteAllText(Path.Combine(context.DataDirectory, "include.txt"), IncludeHelper.Value);
+            return ValueTask.CompletedTask;
+        }
+        public ValueTask<PluginHookResult> OnEnable(System.Threading.CancellationToken cancellationToken) =>
+            ValueTask.FromResult(PluginHookResult.Allow());
+        public ValueTask<PluginHookResult> OnDisable(System.Threading.CancellationToken cancellationToken) =>
+            ValueTask.FromResult(PluginHookResult.Allow());
+        public ValueTask OnUnload(System.Threading.CancellationToken cancellationToken) => ValueTask.CompletedTask;
     }
     """);
 var includeLoaded = host.Load(include);
@@ -289,17 +301,17 @@ host.Unload("Include");
 var quoted = Path.Combine(pluginsRoot, "QuotedInclude");
 Directory.CreateDirectory(Path.Combine(quoted, "src"));
 Directory.CreateDirectory(Path.Combine(quoted, "shared"));
-File.WriteAllText(Path.Combine(quoted, "manifest.json"), """
+File.WriteAllText(Path.Combine(quoted, "hosihikari.json"), """
     {
       "name": "QuotedInclude",
       "entry": "src/main.cs",
-      "type": "hosihikari",
+      "schemaVersion": 1, "kind": "plugin", "apiVersion": 3,
       "version": "1.0.0",
       "dependencies": [
         { "name": "hosihikari" },
         { "name": "hosihikari-csharp" }
       ],
-      "extraInfo": { "api_version": "2", "manifest_version": "1", "loader": "csharp" }
+      "loader": "csharp"
     }
     """);
 File.WriteAllText(Path.Combine(quoted, "shared", "helper.cs"), """
@@ -315,11 +327,16 @@ File.WriteAllText(Path.Combine(quoted, "src", "main.cs"), """
 
     public sealed class QuotedPlugin : IPlugin
     {
-        public void OnLoad(IPluginContext context)
-            => File.WriteAllText(Path.Combine(context.DataDirectory, "quoted.txt"), QuotedHelper.Value);
-        public PluginHookResult OnEnable() => PluginHookResult.Allow();
-        public PluginHookResult OnDisable() => PluginHookResult.Allow();
-        public void OnUnload() { }
+        public ValueTask OnLoad(IPluginContext context, System.Threading.CancellationToken cancellationToken)
+        {
+            File.WriteAllText(Path.Combine(context.DataDirectory, "quoted.txt"), QuotedHelper.Value);
+            return ValueTask.CompletedTask;
+        }
+        public ValueTask<PluginHookResult> OnEnable(System.Threading.CancellationToken cancellationToken) =>
+            ValueTask.FromResult(PluginHookResult.Allow());
+        public ValueTask<PluginHookResult> OnDisable(System.Threading.CancellationToken cancellationToken) =>
+            ValueTask.FromResult(PluginHookResult.Allow());
+        public ValueTask OnUnload(System.Threading.CancellationToken cancellationToken) => ValueTask.CompletedTask;
     }
     """);
 var quotedLoaded = host.Load(quoted);
@@ -333,17 +350,17 @@ host.Unload("QuotedInclude");
 // 编译与运行必须选同一份私有依赖：TPA 里的新版不能盖过包内旧版。
 var overlapRoot = Path.Combine(pluginsRoot, "OverlapMiss");
 Directory.CreateDirectory(overlapRoot);
-File.WriteAllText(Path.Combine(overlapRoot, "manifest.json"), """
+File.WriteAllText(Path.Combine(overlapRoot, "hosihikari.json"), """
     {
       "name": "OverlapMiss",
       "entry": "main.cs",
-      "type": "hosihikari",
+      "schemaVersion": 1, "kind": "plugin", "apiVersion": 3,
       "version": "1.0.0",
       "dependencies": [
         { "name": "hosihikari" },
         { "name": "hosihikari-csharp" }
       ],
-      "extraInfo": { "api_version": "2", "manifest_version": "1", "loader": "csharp" }
+      "loader": "csharp"
     }
     """);
 File.WriteAllText(Path.Combine(overlapRoot, "main.cs"), """
@@ -352,11 +369,16 @@ File.WriteAllText(Path.Combine(overlapRoot, "main.cs"), """
 
     public sealed class OverlapPlugin : IPlugin
     {
-        public void OnLoad(IPluginContext context)
-            => File.WriteAllText(Path.Combine(context.DataDirectory, "overlap.txt"), Overlap.Api.NewApi());
-        public PluginHookResult OnEnable() => PluginHookResult.Allow();
-        public PluginHookResult OnDisable() => PluginHookResult.Allow();
-        public void OnUnload() { }
+        public ValueTask OnLoad(IPluginContext context, System.Threading.CancellationToken cancellationToken)
+        {
+            File.WriteAllText(Path.Combine(context.DataDirectory, "overlap.txt"), Overlap.Api.NewApi());
+            return ValueTask.CompletedTask;
+        }
+        public ValueTask<PluginHookResult> OnEnable(System.Threading.CancellationToken cancellationToken) =>
+            ValueTask.FromResult(PluginHookResult.Allow());
+        public ValueTask<PluginHookResult> OnDisable(System.Threading.CancellationToken cancellationToken) =>
+            ValueTask.FromResult(PluginHookResult.Allow());
+        public ValueTask OnUnload(System.Threading.CancellationToken cancellationToken) => ValueTask.CompletedTask;
     }
     """);
 var overlapV1 = Path.Combine(RepoRoot(), "test", "OverlapV1", "bin", ConfigurationName(), "net10.0", "Overlap.dll");
@@ -433,14 +455,14 @@ void StageProviderPackage()
     var package = Path.Combine(pluginsRoot, "hosihikari-csharp");
     Directory.CreateDirectory(package);
 
-    File.WriteAllText(Path.Combine(package, "manifest.json"), """
+    File.WriteAllText(Path.Combine(package, "hosihikari.json"), """
         {
           "name": "hosihikari-csharp",
           "entry": "Hosihikari.PluginLoader.CSharp.dll",
-          "type": "hosihikari",
+          "schemaVersion": 1, "kind": "loader", "apiVersion": 3,
           "version": "0.1.0",
           "dependencies": [ { "name": "hosihikari" } ],
-          "extraInfo": { "api_version": "2", "manifest_version": "1", "loader": "assembly" }
+          "loader": "assembly"
         }
         """);
 
@@ -468,17 +490,17 @@ bool StageScriptPackage()
     var package = Path.Combine(pluginsRoot, "Hello");
     Directory.CreateDirectory(package);
 
-    File.WriteAllText(Path.Combine(package, "manifest.json"), """
+    File.WriteAllText(Path.Combine(package, "hosihikari.json"), """
         {
           "name": "Hello",
           "entry": "main.cs",
-          "type": "hosihikari",
+          "schemaVersion": 1, "kind": "plugin", "apiVersion": 3,
           "version": "1.0.0",
           "dependencies": [
             { "name": "hosihikari" },
             { "name": "hosihikari-csharp" }
           ],
-          "extraInfo": { "api_version": "2", "manifest_version": "1", "loader": "csharp" }
+          "loader": "csharp"
         }
         """);
 
@@ -505,7 +527,7 @@ bool StageScriptPackage()
         {
             private string _data = "";
 
-            public void OnLoad(IPluginContext context)
+            public ValueTask OnLoad(IPluginContext context, System.Threading.CancellationToken cancellationToken)
             {
                 _data = context.DataDirectory;
                 context.Logger.LogInformation("csharp plugin loaded in {Name}", context.Name);
@@ -531,23 +553,30 @@ bool StageScriptPackage()
                         File.WriteAllText(Path.Combine(_data, "ping.txt"), "ping:" + message.Json);
                     }
                 });
+
+                return ValueTask.CompletedTask;
             }
 
             [DllImport("hosihikari_probe", EntryPoint = "hosihikari_probe")]
             private static extern int NativeProbe();
 
-            public PluginHookResult OnEnable()
+            public ValueTask<PluginHookResult> OnEnable(System.Threading.CancellationToken cancellationToken)
             {
                 File.WriteAllText(Path.Combine(_data, "enabled.txt"), "enabled");
-                return PluginHookResult.Allow();
+                return ValueTask.FromResult(PluginHookResult.Allow());
             }
 
-            public PluginHookResult OnDisable()
+            public ValueTask<PluginHookResult> OnDisable(System.Threading.CancellationToken cancellationToken)
             {
                 File.WriteAllText(Path.Combine(_data, "disabled.txt"), "disabled");
-                return PluginHookResult.Allow();
+                return ValueTask.FromResult(PluginHookResult.Allow());
             }
-            public void OnUnload() => File.WriteAllText(Path.Combine(_data, "unloaded.txt"), "unloaded");
+
+            public ValueTask OnUnload(System.Threading.CancellationToken cancellationToken)
+            {
+                File.WriteAllText(Path.Combine(_data, "unloaded.txt"), "unloaded");
+                return ValueTask.CompletedTask;
+            }
         }
         """);
 
