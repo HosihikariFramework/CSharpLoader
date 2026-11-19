@@ -9,10 +9,10 @@ using Microsoft.Extensions.Logging;
 CultureInfo.DefaultThreadCurrentUICulture = CultureInfo.GetCultureInfo("zh-Hans");
 CultureInfo.CurrentUICulture = CultureInfo.GetCultureInfo("zh-Hans");
 
-// 载体中立检查（ADR-0015）：普通 .NET 控制台驱动核心，不碰 BDS、Shim、任何载体。
+// 载体中立检查（FX-0015）：普通 .NET 控制台驱动核心，不碰 BDS、Shim、任何载体。
 //
 // 宿主不直接注册 C# 加载器 —— 它把加载器当成一个插件包装进去，由那个包在 OnLoad
-// 里把自己登记给框架（ADR-0002）。第二步才是 C# 的本体：装载时用 Roslyn 编译，进 collectible ALC。
+// 里把自己登记给框架（FX-0002）。第二步才是 C# 的本体：装载时用 Roslyn 编译，进 collectible ALC。
 var stage = Path.Combine(Path.GetTempPath(), "hosihikari-csharp-spike");
 if (Directory.Exists(stage))
 {
@@ -27,7 +27,7 @@ Directory.CreateDirectory(configRoot);
 StageProviderPackage();
 var nativeStaged = StageScriptPackage();
 
-// 运营方的覆盖放包外（ADR-0018）—— 脚本读到的应当是这一份。
+// 运营方的覆盖放包外（FX-0018）—— 脚本读到的应当是这一份。
 File.WriteAllText(Path.Combine(configRoot, "Hello.conf"), "greeting = \"overridden\"\n");
 
 var collection = new ServiceCollection();
@@ -53,7 +53,7 @@ Console.WriteLine("=== 加载（含一次 C# 编译） ===");
 host.LoadAll();
 Console.WriteLine($"已加载：{string.Join(", ", host.LoadedNames)}");
 
-// 程序集这一侧发一条通道消息 —— 与 C# 脚本用的是同一个载荷类型（ADR-0026）。
+// 程序集这一侧发一条通道消息 —— 与 C# 脚本用的是同一个载荷类型（FX-0026）。
 host.Events.Publish(new ChannelMessage("ping", "\"from-host\""));
 Thread.Sleep(200);
 
@@ -82,7 +82,7 @@ var expectedHash = Convert.ToHexStringLower(System.IO.Hashing.XxHash128.Hash(new
 checks.Add(("包内自带的第三方依赖可用", Read("hash.txt") == expectedHash, Read("hash.txt")));
 checks.Add(("宿主未引用的包内私有依赖可用", Read("private.txt") == "private-dependency", Read("private.txt")));
 
-// 本机库按 RID 目录优先解析（ADR-0034）；包根那份是 1，RID 那份是 42。
+// 本机库按 RID 目录优先解析（FX-0034）；包根那份是 1，RID 那份是 42。
 checks.Add((
     "本机库按 RID 目录解析",
     !nativeStaged || Read("native.txt") == "42",
@@ -466,7 +466,7 @@ void StageProviderPackage()
         }
         """);
 
-    // 整个构建输出随包走，只把共享层剔掉（ADR-0004）。
+    // 整个构建输出随包走，只把共享层剔掉（FX-0004）。
     var output = Path.Combine(RepoRoot(), "src", "bin", ConfigurationName(), "net10.0");
     foreach (var file in Directory.EnumerateFiles(output, "*.dll"))
     {
@@ -504,7 +504,7 @@ bool StageScriptPackage()
         }
         """);
 
-    // 作者给的默认值，随包更新（ADR-0018）。
+    // 作者给的默认值，随包更新（FX-0018）。
     File.WriteAllText(Path.Combine(package, "Hello.conf"), "greeting = \"package\"\n");
 
     // 包里自带的第三方依赖：不是框架的一部分，编译期与运行期都得从包里拿。
