@@ -9,7 +9,7 @@ C# 插件因此拿到与其他程序集插件一样的承诺：每插件的依�
 这是进程内加载器：在插件开始运行前把源码编译为 IL，加载器把 IL 装进 collectible ALC。
 
 **进程内只留 .NET。** 框架在进程内保留程序集型、C# 与 F# 三个加载器；其他语言走
-通用的进程外加载器（`Hosihikari.PluginLoader.Rpc`，ADR-0031）。
+通用的进程外加载器（`Hosihikari.PluginLoader.Rpc`，FX-0031）。
 
 ## 模板
 
@@ -87,11 +87,11 @@ public sealed class HelloPlugin : IPlugin
 宿主与包带同名依赖的不同版本时，编译与运行会选同一份；共享框架程序集仍保持原来的类型身份。
 解析源码时要给编码，否则 Roslyn 拒绝发调试信息（CS8055）。
 
-产物按内容寻址缓存（ADR-0029）：`<数据目录>/bin/<哈希>/<名字>.dll`，哈希覆盖源码内容、Roslyn 版本与
+产物按内容寻址缓存（FX-0029）：`<数据目录>/bin/<哈希>/<名字>.dll`，哈希覆盖源码内容、Roslyn 版本与
 运行时版本，以及包内私有 DLL 的名字和内容。产物旁存一份校验和，加载前对一遍 —— 对不上就重编，绝不照跑。编译先落到临时目录、成功了才
 改名进去；同时产出 portable PDB，日志里的栈因此带 `file:line`。
 
-校验和防的是**事故**，不防**恶意**：插件与本框架同进程、且完全受信（ADR-0011）。
+校验和防的是**事故**，不防**恶意**：插件与本框架同进程、且完全受信（FX-0011）。
 
 ## 跑一遍
 
@@ -117,7 +117,7 @@ dotnet run --project host/Hosihikari.PluginLoader.CSharp.Host.csproj -c Release
 pwsh ./pack.ps1 -Version 1.0.0 -OutputRoot artifacts
 ```
 
-它把加载器 DLL、私有依赖与 `hosihikari.json` 装进 `plugins/hosihikari-csharp/`，信封 `manifest.json` 由打包器生成（ADR-0058），共享层不随包走；打 `v*` 标签时 CI 把 zip 附到 release（ADR-0044）。
+它把加载器 DLL、私有依赖与 `hosihikari.json` 装进 `plugins/hosihikari-csharp/`，信封 `manifest.json` 由打包器生成（FX-0058），共享层不随包走；打 `v*` 标签时 CI 把 zip 附到 release（FX-0044）。
 
 打包脚本调用插件管理器打包器（`PluginManager/tools/Pack`），共享层清单由插件管理器统一给出；需要并列检出插件管理器仓，或设置 `HOSIHIKARI_PLUGINMANAGER`。
 

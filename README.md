@@ -12,7 +12,7 @@ to IL before the plugin runs, and the loader loads that IL into a collectible AL
 
 **In-process .NET.** The framework keeps the assembly loader, this C# loader and the F# loader
 in-process. Other languages go through the generic out-of-process loader
-(`Hosihikari.PluginLoader.Rpc`, ADR-0031).
+(`Hosihikari.PluginLoader.Rpc`, FX-0031).
 
 ## Templates
 
@@ -96,14 +96,14 @@ package carry different builds of the same dependency; shared framework assembli
 existing identity.
 Parsing passes an encoding, without which Roslyn refuses to emit debugging information (CS8055).
 
-The output is cached by content (ADR-0029): `<data directory>/bin/<hash>/<name>.dll`, the hash covering
+The output is cached by content (FX-0029): `<data directory>/bin/<hash>/<name>.dll`, the hash covering
 the source text, package-local private DLL names and contents, the Roslyn version and the runtime version. A checksum sits next to it and is verified
 before loading — a mismatch means recompile, never load anyway. Compilation goes into a staging
 directory and is moved into place only on success, and a portable PDB is emitted alongside so logged
 stacks carry `file:line`.
 
 The checksum guards against accidents, not against a hostile plugin: plugins share this process and
-are trusted (ADR-0011).
+are trusted (FX-0011).
 
 ## Running it
 
@@ -137,8 +137,8 @@ pwsh ./pack.ps1 -Version 1.0.0 -OutputRoot artifacts
 
 It assembles the loader DLL, its private dependencies and `hosihikari.json` into
 `plugins/hosihikari-csharp/`; the packer generates the LeviLamina `manifest.json` envelope from it
-(ADR-0058), and the shared layer is not copied. Pushing a `v*` tag attaches the zip
-to the GitHub release (ADR-0044).
+(FX-0058), and the shared layer is not copied. Pushing a `v*` tag attaches the zip
+to the GitHub release (FX-0044).
 
 The script invokes the core packager (`PluginManager/tools/Pack`), which owns the
 shared-layer list. Check out the core repository alongside this one, or set
