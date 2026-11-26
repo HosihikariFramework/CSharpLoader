@@ -3,7 +3,6 @@ using System.Reflection;
 using System.Runtime.Loader;
 using System.Text;
 using System.Text.RegularExpressions;
-
 using Hosihikari;
 using Microsoft.CodeAnalysis;
 using Microsoft.CodeAnalysis.CSharp;
@@ -39,12 +38,19 @@ public sealed class CSharpPluginLoader : IPluginLoader
 
     public bool CanLoad(PluginManifest manifest) => manifest.Loader == Id;
 
-    public PluginHandle? Load(PluginManifest manifest, string packageDirectory, IPluginContext context)
+    public PluginHandle? Load(
+        PluginManifest manifest,
+        string packageDirectory,
+        IPluginContext context
+    )
     {
         var entry = Path.Combine(packageDirectory, manifest.EntryPath);
         if (!File.Exists(entry))
         {
-            context.Logger.LogError("{Message}", LoaderText.Get("EntryMissing", manifest.EntryPath));
+            context.Logger.LogError(
+                "{Message}",
+                LoaderText.Get("EntryMissing", manifest.EntryPath)
+            );
             return null;
         }
 
@@ -55,7 +61,11 @@ public sealed class CSharpPluginLoader : IPluginLoader
             return null;
         }
 
-        var cacheDirectory = Path.Combine(context.DataDirectory, "bin", CacheKey(sources, packageDirectory));
+        var cacheDirectory = Path.Combine(
+            context.DataDirectory,
+            "bin",
+            CacheKey(sources, packageDirectory)
+        );
         var assemblyPath = Path.Combine(cacheDirectory, manifest.Name + ".dll");
 
         if (!IsUsable(assemblyPath))
@@ -73,7 +83,8 @@ public sealed class CSharpPluginLoader : IPluginLoader
                     context.Logger.LogError(
                         ex,
                         "{Message}",
-                        LoaderText.Get("CacheDeleteFailed", cacheDirectory));
+                        LoaderText.Get("CacheDeleteFailed", cacheDirectory)
+                    );
                     return null;
                 }
             }
@@ -96,7 +107,8 @@ public sealed class CSharpPluginLoader : IPluginLoader
             context.Logger.LogWarning(
                 ex,
                 "{Message}",
-                LoaderText.Get("CacheUnavailable", cacheDirectory));
+                LoaderText.Get("CacheUnavailable", cacheDirectory)
+            );
             if (!Compile(entry, packageDirectory, cacheDirectory, manifest.Name, context, sources))
             {
                 return null;
@@ -111,7 +123,8 @@ public sealed class CSharpPluginLoader : IPluginLoader
                 context.Logger.LogError(
                     retry,
                     "{Message}",
-                    LoaderText.Get("CacheLeaseFailed", cacheDirectory));
+                    LoaderText.Get("CacheLeaseFailed", cacheDirectory)
+                );
                 return null;
             }
         }
@@ -119,7 +132,12 @@ public sealed class CSharpPluginLoader : IPluginLoader
         ScriptLoadContext loadContext;
         try
         {
-            loadContext = new ScriptLoadContext(assemblyPath, cacheDirectory, packageDirectory, lease);
+            loadContext = new ScriptLoadContext(
+                assemblyPath,
+                cacheDirectory,
+                packageDirectory,
+                lease
+            );
         }
         catch
         {
@@ -129,16 +147,20 @@ public sealed class CSharpPluginLoader : IPluginLoader
         try
         {
             var assembly = loadContext.LoadFromAssemblyPath(assemblyPath);
-            var candidates = assembly.GetTypes()
-                .Where(candidate => typeof(IPlugin).IsAssignableFrom(candidate)
-                                    && candidate is { IsAbstract: false, IsInterface: false }
-                                    && candidate.GetConstructor(System.Type.EmptyTypes) is not null)
+            var candidates = assembly
+                .GetTypes()
+                .Where(candidate =>
+                    typeof(IPlugin).IsAssignableFrom(candidate)
+                    && candidate is { IsAbstract: false, IsInterface: false }
+                    && candidate.GetConstructor(System.Type.EmptyTypes) is not null
+                )
                 .ToArray();
             if (candidates.Length != 1)
             {
                 context.Logger.LogError(
                     "{Message}",
-                    LoaderText.Get("EntryTypeCount", assemblyPath, candidates.Length));
+                    LoaderText.Get("EntryTypeCount", assemblyPath, candidates.Length)
+                );
                 loadContext.Unload();
                 return null;
             }
@@ -147,7 +169,8 @@ public sealed class CSharpPluginLoader : IPluginLoader
             {
                 context.Logger.LogError(
                     "{Message}",
-                    LoaderText.Get("EntryCreateFailed", candidates[0].FullName));
+                    LoaderText.Get("EntryCreateFailed", candidates[0].FullName)
+                );
                 loadContext.Unload();
                 return null;
             }
@@ -156,7 +179,11 @@ public sealed class CSharpPluginLoader : IPluginLoader
         }
         catch (Exception ex)
         {
-            context.Logger.LogError(ex, "{Message}", LoaderText.Get("ArtifactLoadFailed", manifest.Name));
+            context.Logger.LogError(
+                ex,
+                "{Message}",
+                LoaderText.Get("ArtifactLoadFailed", manifest.Name)
+            );
             try
             {
                 loadContext.Unload();
@@ -166,7 +193,8 @@ public sealed class CSharpPluginLoader : IPluginLoader
                 context.Logger.LogWarning(
                     unloadEx,
                     "{Message}",
-                    LoaderText.Get("ArtifactReclaimFailed", manifest.Name));
+                    LoaderText.Get("ArtifactReclaimFailed", manifest.Name)
+                );
             }
 
             return null;
@@ -180,16 +208,19 @@ public sealed class CSharpPluginLoader : IPluginLoader
     private static List<SourceFile>? LoadSources(
         string entry,
         string packageDirectory,
-        IPluginContext context)
+        IPluginContext context
+    )
     {
         var root = Path.GetFullPath(packageDirectory);
-        var prefix = root.EndsWith(Path.DirectorySeparatorChar) ? root : root + Path.DirectorySeparatorChar;
+        var prefix = root.EndsWith(Path.DirectorySeparatorChar)
+            ? root
+            : root + Path.DirectorySeparatorChar;
         var comparison = OperatingSystem.IsWindows()
             ? StringComparison.OrdinalIgnoreCase
             : StringComparison.Ordinal;
-        var visited = new HashSet<string>(OperatingSystem.IsWindows()
-            ? StringComparer.OrdinalIgnoreCase
-            : StringComparer.Ordinal);
+        var visited = new HashSet<string>(
+            OperatingSystem.IsWindows() ? StringComparer.OrdinalIgnoreCase : StringComparer.Ordinal
+        );
         var sources = new List<SourceFile>();
         string? error = null;
 
@@ -205,7 +236,8 @@ public sealed class CSharpPluginLoader : IPluginLoader
             {
                 full = Path.GetFullPath(path);
             }
-            catch (Exception ex) when (ex is ArgumentException or NotSupportedException or PathTooLongException)
+            catch (Exception ex)
+                when (ex is ArgumentException or NotSupportedException or PathTooLongException)
             {
                 error = LoaderText.Get("SourcePathInvalid", path);
                 return;
@@ -312,7 +344,9 @@ public sealed class CSharpPluginLoader : IPluginLoader
         return Directory
             .EnumerateFiles(packageRoot, "*", SearchOption.AllDirectories)
             .Where(file => file.EndsWith(".cs", StringComparison.OrdinalIgnoreCase))
-            .Where(file => regex.IsMatch(Path.GetRelativePath(baseDirectory, file).Replace('\\', '/')))
+            .Where(file =>
+                regex.IsMatch(Path.GetRelativePath(baseDirectory, file).Replace('\\', '/'))
+            )
             .OrderBy(file => file, StringComparer.Ordinal)
             .ToArray();
     }
@@ -365,14 +399,30 @@ public sealed class CSharpPluginLoader : IPluginLoader
         hasher.Append(Encoding.UTF8.GetBytes("csharp-cache-3"));
         foreach (var source in sources)
         {
-            hasher.Append(Encoding.UTF8.GetBytes(Path.GetRelativePath(packageDirectory, source.Path)));
+            hasher.Append(
+                Encoding.UTF8.GetBytes(Path.GetRelativePath(packageDirectory, source.Path))
+            );
             hasher.Append(Encoding.UTF8.GetBytes(source.Text));
         }
 
-        hasher.Append(Encoding.UTF8.GetBytes(typeof(CSharpCompilation).Assembly.GetName().Version?.ToString() ?? "?"));
-        hasher.Append(Encoding.UTF8.GetBytes(typeof(IPlugin).Assembly.GetName().Version?.ToString() ?? "?"));
-        hasher.Append(Encoding.UTF8.GetBytes(typeof(CSharpPluginLoader).Assembly.GetName().Version?.ToString() ?? "?"));
-        hasher.Append(Encoding.UTF8.GetBytes(System.Runtime.InteropServices.RuntimeInformation.RuntimeIdentifier));
+        hasher.Append(
+            Encoding.UTF8.GetBytes(
+                typeof(CSharpCompilation).Assembly.GetName().Version?.ToString() ?? "?"
+            )
+        );
+        hasher.Append(
+            Encoding.UTF8.GetBytes(typeof(IPlugin).Assembly.GetName().Version?.ToString() ?? "?")
+        );
+        hasher.Append(
+            Encoding.UTF8.GetBytes(
+                typeof(CSharpPluginLoader).Assembly.GetName().Version?.ToString() ?? "?"
+            )
+        );
+        hasher.Append(
+            Encoding.UTF8.GetBytes(
+                System.Runtime.InteropServices.RuntimeInformation.RuntimeIdentifier
+            )
+        );
         hasher.Append(Encoding.UTF8.GetBytes(Environment.Version.ToString()));
 
         // 包内自带的依赖也参与寻址 —— 换了 dll 就该重编。
@@ -387,7 +437,8 @@ public sealed class CSharpPluginLoader : IPluginLoader
 
     /// <summary>插件目录里自带的依赖；框架已经有的那些不算（共享层，FX-0004）。</summary>
     private static IReadOnlyList<string> LocalAssemblies(string packageDirectory) =>
-        Directory.EnumerateFiles(packageDirectory, "*.dll")
+        Directory
+            .EnumerateFiles(packageDirectory, "*.dll")
             .Where(IsManagedAssembly)
             .Where(path => !IsFrameworkAssembly(Path.GetFileNameWithoutExtension(path)))
             .OrderBy(path => path, StringComparer.Ordinal)
@@ -410,8 +461,13 @@ public sealed class CSharpPluginLoader : IPluginLoader
     // 共享层按契约的清单判（FX-0019 / 0026），不看宿主恰好加载过什么：
     // 否则插件自带的同名库会被静默顶掉，还不进缓存键。
     private static bool IsFrameworkAssembly(string name) =>
-        PluginContractInfo.BaseSharedAssemblyFileNames
-            .Any(file => string.Equals(Path.GetFileNameWithoutExtension(file), name, StringComparison.OrdinalIgnoreCase));
+        PluginContractInfo.BaseSharedAssemblyFileNames.Any(file =>
+            string.Equals(
+                Path.GetFileNameWithoutExtension(file),
+                name,
+                StringComparison.OrdinalIgnoreCase
+            )
+        );
 
     /// <summary>产物与 PDB 都在、且两行校验和都对得上才算能用。</summary>
     private static bool IsUsable(string assemblyPath)
@@ -429,10 +485,12 @@ public sealed class CSharpPluginLoader : IPluginLoader
             return false;
         }
 
-        var assemblyHash = Convert.ToHexStringLower(XxHash128.Hash(File.ReadAllBytes(assemblyPath)));
+        var assemblyHash = Convert.ToHexStringLower(
+            XxHash128.Hash(File.ReadAllBytes(assemblyPath))
+        );
         var pdbHash = Convert.ToHexStringLower(XxHash128.Hash(File.ReadAllBytes(pdbPath)));
         return string.Equals(expected[0].Trim(), assemblyHash, StringComparison.OrdinalIgnoreCase)
-               && string.Equals(expected[1].Trim(), pdbHash, StringComparison.OrdinalIgnoreCase);
+            && string.Equals(expected[1].Trim(), pdbHash, StringComparison.OrdinalIgnoreCase);
     }
 
     private bool Compile(
@@ -441,7 +499,8 @@ public sealed class CSharpPluginLoader : IPluginLoader
         string cacheDirectory,
         string name,
         IPluginContext context,
-        IReadOnlyList<SourceFile> sources)
+        IReadOnlyList<SourceFile> sources
+    )
     {
         // 编到唯一的临时目录，成功了再原子改名 —— 崩在中间不会留下半个产物，
         // 两个进程同时编同一份内容也不会踩同一个 .tmp。
@@ -458,9 +517,10 @@ public sealed class CSharpPluginLoader : IPluginLoader
             }
 
             var pdbPath = Path.ChangeExtension(assemblyPath, ".pdb");
-            var checksum = Convert.ToHexStringLower(XxHash128.Hash(File.ReadAllBytes(assemblyPath)))
-                           + Environment.NewLine
-                           + Convert.ToHexStringLower(XxHash128.Hash(File.ReadAllBytes(pdbPath)));
+            var checksum =
+                Convert.ToHexStringLower(XxHash128.Hash(File.ReadAllBytes(assemblyPath)))
+                + Environment.NewLine
+                + Convert.ToHexStringLower(XxHash128.Hash(File.ReadAllBytes(pdbPath)));
             File.WriteAllText(assemblyPath + ChecksumSuffix, checksum);
 
             Directory.CreateDirectory(Path.GetDirectoryName(cacheDirectory)!);
@@ -468,7 +528,10 @@ public sealed class CSharpPluginLoader : IPluginLoader
             {
                 Directory.Move(staging, cacheDirectory);
             }
-            catch (IOException) when (Directory.Exists(cacheDirectory) && IsUsable(Path.Combine(cacheDirectory, name + ".dll")))
+            catch (IOException)
+                when (Directory.Exists(cacheDirectory)
+                    && IsUsable(Path.Combine(cacheDirectory, name + ".dll"))
+                )
             {
                 // 另一个进程已经先落好了同一份内容。
                 return true;
@@ -503,7 +566,8 @@ public sealed class CSharpPluginLoader : IPluginLoader
         string packageDirectory,
         string assemblyPath,
         IPluginContext context,
-        IReadOnlyList<SourceFile> sources)
+        IReadOnlyList<SourceFile> sources
+    )
     {
         // 与 SDK 的 ImplicitUsings 对齐：作者不该为 System / IO / Linq 写样板。
         // 单独一棵 global using 的树 —— 编译选项上的 Usings 只对 script 模式生效，
@@ -512,16 +576,20 @@ public sealed class CSharpPluginLoader : IPluginLoader
             string.Join(Environment.NewLine, DefaultUsings.Select(name => $"global using {name};")),
             new CSharpParseOptions(LanguageVersion.Latest),
             "implicit-usings.cs",
-            Encoding.UTF8);
+            Encoding.UTF8
+        );
 
         // 第四个参数是编码：不给它，Roslyn 拒绝为这段源码发 PDB（CS8055）。
         // 每份源码都用调用方读过、且参与缓存键的同一份文本。
         var trees = sources
-            .Select(source => CSharpSyntaxTree.ParseText(
-                source.Text,
-                new CSharpParseOptions(LanguageVersion.Latest),
-                source.Path,
-                Encoding.UTF8))
+            .Select(source =>
+                CSharpSyntaxTree.ParseText(
+                    source.Text,
+                    new CSharpParseOptions(LanguageVersion.Latest),
+                    source.Path,
+                    Encoding.UTF8
+                )
+            )
             .ToArray();
 
         // 引用 = 宿主的运行时 + 框架自己 ALC 里的那些（契约与它的抽象包都在里面）。
@@ -531,9 +599,13 @@ public sealed class CSharpPluginLoader : IPluginLoader
 
         var compilation = CSharpCompilation.Create(
             Path.GetFileNameWithoutExtension(assemblyPath),
-            [imports, ..trees],
+            [imports, .. trees],
             references,
-            new CSharpCompilationOptions(OutputKind.DynamicallyLinkedLibrary, optimizationLevel: OptimizationLevel.Release));
+            new CSharpCompilationOptions(
+                OutputKind.DynamicallyLinkedLibrary,
+                optimizationLevel: OptimizationLevel.Release
+            )
+        );
 
         // 没有 PDB 就没有 file:line，而日志是唯一的诊断通道。
         using var assemblyStream = File.Create(assemblyPath);
@@ -541,14 +613,19 @@ public sealed class CSharpPluginLoader : IPluginLoader
         var result = compilation.Emit(
             assemblyStream,
             pdbStream,
-            options: new EmitOptions(debugInformationFormat: DebugInformationFormat.PortablePdb));
+            options: new EmitOptions(debugInformationFormat: DebugInformationFormat.PortablePdb)
+        );
 
         if (result.Success)
         {
             return true;
         }
 
-        foreach (var diagnostic in result.Diagnostics.Where(entry => entry.Severity == DiagnosticSeverity.Error))
+        foreach (
+            var diagnostic in result.Diagnostics.Where(entry =>
+                entry.Severity == DiagnosticSeverity.Error
+            )
+        )
         {
             context.Logger.LogError("{Message}", diagnostic.ToString());
         }
@@ -597,7 +674,12 @@ public sealed class CSharpPluginLoader : IPluginLoader
         }
 
         var trusted = (string?)AppContext.GetData("TRUSTED_PLATFORM_ASSEMBLIES");
-        foreach (var path in (trusted ?? string.Empty).Split(Path.PathSeparator, StringSplitOptions.RemoveEmptyEntries))
+        foreach (
+            var path in (trusted ?? string.Empty).Split(
+                Path.PathSeparator,
+                StringSplitOptions.RemoveEmptyEntries
+            )
+        )
         {
             if (seen.Add(Path.GetFileNameWithoutExtension(path)))
             {
@@ -644,7 +726,14 @@ public sealed class CSharpPluginLoader : IPluginLoader
                 }
 
                 var leasePath = LeasePath(root, sibling);
-                using (new FileStream(leasePath, FileMode.OpenOrCreate, FileAccess.ReadWrite, FileShare.None))
+                using (
+                    new FileStream(
+                        leasePath,
+                        FileMode.OpenOrCreate,
+                        FileAccess.ReadWrite,
+                        FileShare.None
+                    )
+                )
                 {
                     Directory.Delete(sibling, recursive: true);
                 }
@@ -666,7 +755,8 @@ public sealed class CSharpPluginLoader : IPluginLoader
             LeasePath(root, cacheDirectory),
             FileMode.OpenOrCreate,
             FileAccess.ReadWrite,
-            FileShare.ReadWrite);
+            FileShare.ReadWrite
+        );
 
         if (Directory.Exists(cacheDirectory))
         {
@@ -692,7 +782,8 @@ public sealed class CSharpPluginLoader : IPluginLoader
             string mainAssemblyPath,
             string directory,
             string packageDirectory,
-            FileStream lease)
+            FileStream lease
+        )
             : base(Path.GetFileNameWithoutExtension(mainAssemblyPath), isCollectible: true)
         {
             _resolver = TryCreateResolver(mainAssemblyPath);
@@ -710,16 +801,18 @@ public sealed class CSharpPluginLoader : IPluginLoader
             }
 
             // 框架已经有的（契约、它的抽象包……）一律用那一份，别在这里造第二个身份。
-            var fromFramework = FrameworkContext?.Assemblies.FirstOrDefault(
-                loaded => string.Equals(loaded.GetName().Name, assemblyName.Name, StringComparison.Ordinal));
+            var fromFramework = FrameworkContext?.Assemblies.FirstOrDefault(loaded =>
+                string.Equals(loaded.GetName().Name, assemblyName.Name, StringComparison.Ordinal)
+            );
             if (fromFramework is not null)
             {
                 return fromFramework;
             }
 
-            var path = _resolver?.ResolveAssemblyToPath(assemblyName)
-                       ?? Existing(Path.Combine(_directory, assemblyName.Name + ".dll"))
-                       ?? Existing(Path.Combine(_packageDirectory, assemblyName.Name + ".dll"));
+            var path =
+                _resolver?.ResolveAssemblyToPath(assemblyName)
+                ?? Existing(Path.Combine(_directory, assemblyName.Name + ".dll"))
+                ?? Existing(Path.Combine(_packageDirectory, assemblyName.Name + ".dll"));
             return path is null ? null : LoadFromAssemblyPath(path);
         }
 
@@ -733,11 +826,18 @@ public sealed class CSharpPluginLoader : IPluginLoader
         private static string? FindNativeLibrary(string root, string unmanagedDllName)
         {
             string[] prefixes = OperatingSystem.IsWindows() ? [""] : ["", "lib"];
-            string[] extensions = OperatingSystem.IsWindows() ? [".dll"]
-                : OperatingSystem.IsMacOS() ? [".dylib"] : [".so", ".so.1"];
+            string[] extensions =
+                OperatingSystem.IsWindows() ? [".dll"]
+                : OperatingSystem.IsMacOS() ? [".dylib"]
+                : [".so", ".so.1"];
             var directories = new[]
             {
-                Path.Combine(root, "runtimes", System.Runtime.InteropServices.RuntimeInformation.RuntimeIdentifier, "native"),
+                Path.Combine(
+                    root,
+                    "runtimes",
+                    System.Runtime.InteropServices.RuntimeInformation.RuntimeIdentifier,
+                    "native"
+                ),
                 root,
             };
 
@@ -752,7 +852,9 @@ public sealed class CSharpPluginLoader : IPluginLoader
                 {
                     foreach (var extension in extensions)
                     {
-                        var candidate = Existing(Path.Combine(directory, prefix + unmanagedDllName + extension));
+                        var candidate = Existing(
+                            Path.Combine(directory, prefix + unmanagedDllName + extension)
+                        );
                         if (candidate is not null)
                         {
                             return candidate;
@@ -770,7 +872,8 @@ public sealed class CSharpPluginLoader : IPluginLoader
             return null;
         }
 
-        private static string? Existing(string path) => File.Exists(path) ? Path.GetFullPath(path) : null;
+        private static string? Existing(string path) =>
+            File.Exists(path) ? Path.GetFullPath(path) : null;
 
         private static AssemblyDependencyResolver? TryCreateResolver(string path)
         {
@@ -787,7 +890,8 @@ public sealed class CSharpPluginLoader : IPluginLoader
     }
 }
 
-internal sealed class CompiledPluginHandle(IPlugin plugin, AssemblyLoadContext loadContext) : PluginHandle(plugin)
+internal sealed class CompiledPluginHandle(IPlugin plugin, AssemblyLoadContext loadContext)
+    : PluginHandle(plugin)
 {
     private WeakReference? _weakContext;
     private AssemblyLoadContext? _loadContext = loadContext;
@@ -808,7 +912,9 @@ internal sealed class CompiledPluginHandle(IPlugin plugin, AssemblyLoadContext l
         Plugin = null;
     }
 
-    public override async Task<bool> WaitForUnloadAsync(CancellationToken cancellationToken = default)
+    public override async Task<bool> WaitForUnloadAsync(
+        CancellationToken cancellationToken = default
+    )
     {
         if (_weakContext is null)
         {
